@@ -11,6 +11,6 @@ interface IUTSToken is IERC20 {
     
     function onlyRoleBurnable() external view returns(bool);
 
-    function initializeToken(DeployTokenData calldata $) external;
+    function initializeToken(DeployTokenData calldata params) external;
 
 }

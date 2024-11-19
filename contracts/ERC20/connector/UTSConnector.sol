@@ -12,8 +12,6 @@ import "../interfaces/IUTSConnector.sol";
 contract UTSConnector is IUTSConnector, UTSBaseIndexed, AccessControl {
     using SafeERC20 for IERC20Metadata;
 
-    IERC20Metadata internal _underlyingToken;
-
     function initializeConnector(
         address _owner,
         address underlyingToken_,
@@ -21,20 +19,12 @@ contract UTSConnector is IUTSConnector, UTSBaseIndexed, AccessControl {
         uint256[] calldata _allowedChainIds,
         ChainConfig[] calldata _chainConfigs
     ) external { 
-        __UTSBase_init(
-            IERC20Metadata(underlyingToken_).decimals(),
-            _router,  
-            _allowedChainIds,
-            _chainConfigs
-        );
+        __UTSBase_init(underlyingToken_, IERC20Metadata(underlyingToken_).decimals());
 
-        _underlyingToken = IERC20Metadata(underlyingToken_);
+        _setRouter(_router);
+        _setChainConfig(_allowedChainIds, _chainConfigs);
 
         _grantRole(DEFAULT_ADMIN_ROLE, _owner);
-    }
-
-    function underlyingToken() public view override returns(address) {
-        return address(_underlyingToken);
     }
 
     function underlyingDecimals() external view returns(uint8) {
@@ -42,15 +32,15 @@ contract UTSConnector is IUTSConnector, UTSBaseIndexed, AccessControl {
     }
 
     function underlyingBalance() external view returns(uint256) {
-        return _underlyingToken.balanceOf(address(this));
+        return IERC20Metadata(_underlyingToken).balanceOf(address(this));
     }
 
     function underlyingName() external view returns(string memory) {
-        return _underlyingToken.name();
+        return IERC20Metadata(_underlyingToken).name();
     }
 
     function underlyingSymbol() external view returns(string memory) {
-        return _underlyingToken.symbol();
+        return IERC20Metadata(_underlyingToken).symbol();
     }
 
     function supportsInterface(bytes4 interfaceId) public view override(UTSBase, AccessControl) returns(bool) {
@@ -63,9 +53,9 @@ contract UTSConnector is IUTSConnector, UTSBaseIndexed, AccessControl {
         bytes memory /* to */, 
         uint256 amount, 
         uint256 /* dstChainId */, 
-        bytes memory /* payload */
+        bytes memory /* customPayload */
     ) internal virtual override returns(uint256) {
-        _underlyingToken.safeTransferFrom(spender, address(this), amount);
+        IERC20Metadata(_underlyingToken).safeTransferFrom(spender, address(this), amount);
 
         return amount;
     }
@@ -73,10 +63,10 @@ contract UTSConnector is IUTSConnector, UTSBaseIndexed, AccessControl {
     function _mintTo(
         address to,
         uint256 amount,
-        bytes memory /* payload */,
+        bytes memory /* customPayload */,
         Origin memory /* origin */
     ) internal virtual override returns(uint256) {
-        if (to != address(this)) _underlyingToken.safeTransfer(to, amount);
+        if (to != address(this)) IERC20Metadata(_underlyingToken).safeTransfer(to, amount);
 
         return amount;
     }

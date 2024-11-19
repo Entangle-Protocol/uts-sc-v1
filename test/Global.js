@@ -139,12 +139,39 @@ describe("UTS ERC20 V1 Tests", function () {
         const deployTokenGas = 3300000n;
         const deployConnectorGas = 2500000n;
 
-        await factory.connect(admin).setCodeStorage(0, codeStorage.target);
-        await factory.connect(admin).setCodeStorage(1, codeStorageMintable.target);
-        await factory.connect(admin).setCodeStorage(2, codeStorageTokenWithFee.target);
-        await factory.connect(admin).setCodeStorage(3, codeStorageMintableWithFee.target);
-        await factory.connect(admin).setCodeStorage(4, codeStoragePure.target);
-        await factory.connect(admin).setCodeStorage(5, codeStorageConnectorWithFee.target);
+        await priceFeed.connect(admin).setChainInfo(
+            [1, 10, 56, 100, 137, 5000, 8453, 42161, 43114, 59144, 81457, 534352, 33033, 559999, 569999, 570001],
+            [
+                4722366482869645213696n,
+                4740813226943354765312n,
+                4759259971017064316928n,
+                4777706715090773868544n,
+                9444732965739290427392n,
+                9463179709812999979008n,
+                9481626453886709530624n,
+                9500073197960419082240n,
+                14167099448608935641088n,
+                14185546192682645192704n,
+                14203992936756354744320n,
+                14222439680830064295936n,
+                18889465931478580854784n,
+                18907912675552290406400n,
+                18926359419625999958016n,
+                18944806163699709509632n
+            ]
+        );
+
+        await factory.connect(admin).setCodeStorage(
+            [0, 1, 2, 3, 4, 5],
+            [
+                codeStorage.target,
+                codeStorageMintable.target,
+                codeStorageTokenWithFee.target,
+                codeStorageMintableWithFee.target,
+                codeStoragePure.target,
+                codeStorageConnectorWithFee.target
+            ]
+        );
         await masterRouter.connect(admin).setFeeCollector(feeCollector);
         await masterRouter.connect(admin).grantRole(routerRole, router.target);
         await masterRouter.connect(admin).grantRole(routerRole, dRouter.target);
@@ -211,7 +238,17 @@ describe("UTS ERC20 V1 Tests", function () {
         return bytesAddress;
     }
 
-    async function encodeParamsToRedeem(msgSender, dstToken, dstTo, amount, srcChainId, srcPeer, srcDecimals, gasLimit, payload) {
+    async function encodeParamsToRedeem(
+        msgSender,
+        dstToken,
+        dstTo,
+        amount,
+        srcChainId,
+        srcPeer,
+        srcDecimals,
+        gasLimit,
+        customPayload
+    ) {
         const dstTokenAddress = await convertToBytes(dstToken);
         const dstToAddress = await convertToBytes(dstTo);
         const senderAddress = await convertToBytes(msgSender);
@@ -233,7 +270,7 @@ describe("UTS ERC20 V1 Tests", function () {
             srcPeer,
             srcDecimals,
             gasLimit,
-            payload
+            customPayload
         ]);
 
         const params = AbiCoder.encode([
@@ -287,6 +324,7 @@ describe("UTS ERC20 V1 Tests", function () {
         symbol,
         decimals,
         initialSupply,
+        mintedAmountToOwner,
         mintable,
         globalBurnable,
         onlyRoleBurnable,
@@ -300,13 +338,14 @@ describe("UTS ERC20 V1 Tests", function () {
         const routerAddress = await convertToBytes(router);
 
         const tokenDeployParams = AbiCoder.encode([
-            "tuple(bytes, string, string, uint8, uint256, bool, bool, bool, bool, bool, bytes, uint256[], tuple(bytes, uint64, uint8, bool)[], bytes32)"
+            "tuple(bytes, string, string, uint8, uint256, uint256, bool, bool, bool, bool, bool, bytes, uint256[], tuple(bytes, uint64, uint8, bool)[], bytes32)"
         ], [[
             ownerAddress,
             name,
             symbol,
             decimals,
             initialSupply,
+            mintedAmountToOwner,
             false,
             mintable,
             globalBurnable,
@@ -324,6 +363,7 @@ describe("UTS ERC20 V1 Tests", function () {
             symbol,
             decimals,
             initialSupply,
+            mintedAmountToOwner,
             false,
             mintable,
             globalBurnable,
@@ -422,7 +462,7 @@ describe("UTS ERC20 V1 Tests", function () {
 
         expect(BPS + 1n).to.above(feeBPS);
 
-        const fee = await router.getBridgeFee(chainId, gasLimit, payloadLength);
+        const fee = await router.getBridgeFee(chainId, gasLimit, payloadLength, "0x");
         const baseFee = (gasLimit * gasPrice + payloadLength * pricePerByte);
         const calcFee = baseFee * (BPS + feeBPS) / BPS;
 
@@ -539,6 +579,7 @@ describe("UTS ERC20 V1 Tests", function () {
             name,
             symbol,
             decimals,
+            initialSupply,
             initialSupply,
             false,
             mintable,
@@ -685,6 +726,7 @@ describe("UTS ERC20 V1 Tests", function () {
             "string symbol",
             1,
             1,
+            1,
             false,
             false,
             false,
@@ -726,6 +768,7 @@ describe("UTS ERC20 V1 Tests", function () {
                 amountToTransfer,
                 allowedChainId,
                 configMinGasLimit - 1n,
+                "0x",
                 "0x"
             )).to.be.revertedWithCustomError(deployedToken, "UTSBase__E6");
 
@@ -735,6 +778,7 @@ describe("UTS ERC20 V1 Tests", function () {
                 amountToTransfer,
                 allowedChainId,
                 configMinGasLimit - 1n,
+                "0x",
                 "0x"
             )).to.be.revertedWithCustomError(deployedToken, "UTSBase__E6");
         }
@@ -744,6 +788,7 @@ describe("UTS ERC20 V1 Tests", function () {
             "",
             "",
             decimals,
+            initialSupply,
             initialSupply,
             false,
             mintable,
@@ -835,6 +880,7 @@ describe("UTS ERC20 V1 Tests", function () {
                 allowedChainIdTwo[0],
                 configMinGasLimit,
                 "0x",
+                "0x",
                 { value: configMinGasLimit }
             )).to.be.revertedWithCustomError(router, "UTSRouter__E4");
 
@@ -845,6 +891,7 @@ describe("UTS ERC20 V1 Tests", function () {
                 allowedChainIdTwo[0],
                 configMinGasLimit,
                 "0x",
+                "0x",
                 { value: configMinGasLimit }
             )).to.be.revertedWithCustomError(router, "UTSRouter__E4");
 
@@ -854,6 +901,7 @@ describe("UTS ERC20 V1 Tests", function () {
                 tokenAmountToBridge,
                 31338,
                 configMinGasLimit,
+                "0x",
                 "0x",
                 { value: configMinGasLimit }
             )).to.be.revertedWithCustomError(router, "UTSRouter__E5");
@@ -891,6 +939,7 @@ describe("UTS ERC20 V1 Tests", function () {
                 tokenAmountToBridge,
                 allowedChainIdFive[0],
                 configMinGasLimit,
+                "0x",
                 "0x",
                 { value: configMinGasLimit }
             )).to.be.revertedWithCustomError(router, "UTSRouter__E1");
@@ -1040,6 +1089,7 @@ describe("UTS ERC20 V1 Tests", function () {
             amountToBridge,
             allowedChainId,
             configMinGasLimit - 1n,
+            "0x",
             "0x"
         )).to.be.revertedWithCustomError(deployedConnector, "UTSBase__E6");
 
@@ -1049,6 +1099,7 @@ describe("UTS ERC20 V1 Tests", function () {
             amountToBridge,
             allowedChainId,
             configMinGasLimit - 1n,
+            "0x",
             "0x"
         )).to.be.revertedWithCustomError(deployedConnector, "UTSBase__E6");
 
@@ -1184,6 +1235,7 @@ describe("UTS ERC20 V1 Tests", function () {
             allowedChainId,
             configMinGasLimit,
             "0x",
+            "0x",
             { value: configMinGasLimit }
         )).to.be.revertedWithCustomError(router, "UTSRouter__E4");
 
@@ -1194,6 +1246,7 @@ describe("UTS ERC20 V1 Tests", function () {
             allowedChainId,
             configMinGasLimit,
             "0x",
+            "0x",
             { value: configMinGasLimit }
         )).to.be.revertedWithCustomError(router, "UTSRouter__E4");
 
@@ -1203,6 +1256,7 @@ describe("UTS ERC20 V1 Tests", function () {
             tokenAmountToBridge,
             allowedChainIdFour[0],
             configMinGasLimit,
+            "0x",
             "0x",
             { value: configMinGasLimit }
         )).to.be.revertedWithCustomError(router, "UTSRouter__E5");
@@ -1240,6 +1294,7 @@ describe("UTS ERC20 V1 Tests", function () {
             tokenAmountToBridge,
             allowedChainIdFive[0],
             configMinGasLimit,
+            "0x",
             "0x",
             { value: configMinGasLimit }
         )).to.be.revertedWithCustomError(router, "UTSRouter__E1");
@@ -1493,6 +1548,7 @@ describe("UTS ERC20 V1 Tests", function () {
                 symbol,
                 decimals,
                 initialSupply,
+                initialSupply,
                 pureToken,
                 mintable,
                 globalBurnable,
@@ -1508,20 +1564,20 @@ describe("UTS ERC20 V1 Tests", function () {
             const deployedPureToken = await ethers.getContractAt("UTSTokenPure", precompute.deployment);
             expect(precompute.hasCode).to.equal(true);
 
-            expect(await deployedPureToken.supportsInterface("0xae4898dc")).to.equal(true);
+            expect(await deployedPureToken.supportsInterface("0x950a21e1")).to.equal(true);
             expect(await deployedPureToken.supportsInterface("0x36372b07")).to.equal(true);
             expect(await deployedToken.supportsInterface("0x7965db0b")).to.equal(true);
             expect(await deployedToken.supportsInterface("0x36372b07")).to.equal(true);
-            expect(await deployedToken.supportsInterface("0xf74eaa93")).to.equal(true);
-            expect(await deployedToken.supportsInterface("0xae4898dc")).to.equal(true);
-            expect(await deployedConnector.supportsInterface("0xae4898dc")).to.equal(true);
+            expect(await deployedToken.supportsInterface("0xfb0df930")).to.equal(true);
+            expect(await deployedToken.supportsInterface("0x950a21e1")).to.equal(true);
+            expect(await deployedConnector.supportsInterface("0x950a21e1")).to.equal(true);
             expect(await deployedConnector.supportsInterface("0x03ca2c97")).to.equal(true);
-            expect(await router.supportsInterface("0xab997fa8")).to.equal(true);
-            expect(await factory.supportsInterface("0xbaa5c28a")).to.equal(true);
+            expect(await router.supportsInterface("0x8e392e4e")).to.equal(true);
+            expect(await factory.supportsInterface("0x63e0baa3")).to.equal(true);
             expect(await masterRouter.supportsInterface("0x5608a7ae")).to.equal(true);
             expect(await registry.supportsInterface("0x483e45f1")).to.equal(true);
-            expect(await dRouter.supportsInterface("0xaa3d068e")).to.equal(true);
-            expect(await priceFeed.supportsInterface("0x17c96f86")).to.equal(true);
+            expect(await dRouter.supportsInterface("0x0a33324b")).to.equal(true);
+            expect(await priceFeed.supportsInterface("0xb33b3780")).to.equal(true);
             expect(await deployedToken.supportsInterface("0x01ffc9a7")).to.equal(true);
             expect(await deployedConnector.supportsInterface("0x01ffc9a7")).to.equal(true);
             expect(await router.supportsInterface("0x01ffc9a7")).to.equal(true);
@@ -1832,6 +1888,7 @@ describe("UTS ERC20 V1 Tests", function () {
                     allowedChainIds[0],
                     configMinGasLimit,
                     "0x",
+                    "0x",
                     { value: baseFeePerGasInWei * configMinGasLimit }
                 );
             });
@@ -1852,6 +1909,7 @@ describe("UTS ERC20 V1 Tests", function () {
                     dstChainId,
                     1000000,
                     largePayload,
+                    "0x",
                     { value: withDecimals("1") }
                 )).to.be.revertedWithCustomError(masterRouter, "UTSMasterRouter__E1");
             });
@@ -1871,6 +1929,7 @@ describe("UTS ERC20 V1 Tests", function () {
                     12,
                     81457,
                     1000000,
+                    "0x",
                     "0x",
                     { value: withDecimals("1") }
                 )).to.be.revertedWithCustomError(masterRouter, "UTSMasterRouter__E2");
@@ -2051,8 +2110,8 @@ describe("UTS ERC20 V1 Tests", function () {
             it("Failure case", async function () {
                 const { admin, user, router, zeroHash, endpoint, masterRouter, protocolId, functionSelector } = await loadFixture(globalFixture);
 
-                const UTSTokenMockTwo = await ethers.getContractFactory("UTSTokenMockTwo", admin);
-                const mock = await UTSTokenMockTwo.deploy(router.target);
+                const UTSTokenMock = await ethers.getContractFactory("UTSTokenMock", admin);
+                const mock = await UTSTokenMock.deploy(router.target);
                 await mock.waitForDeployment();
 
                 const allowedChainIds = [dstChainId];
@@ -2319,8 +2378,8 @@ describe("UTS ERC20 V1 Tests", function () {
                 const { user, priceFeed } = await loadFixture(globalFixture);
 
                 await expect(priceFeed.connect(user).setChainInfo(
-                    1,
-                    1
+                    [1],
+                    [1]
                 )).to.be.revertedWithCustomError(priceFeed, "AccessControlUnauthorizedAccount");
             });
         });
@@ -2417,6 +2476,29 @@ describe("UTS ERC20 V1 Tests", function () {
                     [],
                     [1]
                 )).to.be.revertedWithCustomError(priceFeed, "UTSPriceFeed__E0");
+            });
+
+            it("setChainInfo", async function () {
+                const { admin, priceFeed } = await loadFixture(globalFixture);
+
+                await expect(priceFeed.connect(admin).setChainInfo(
+                    [],
+                    [1]
+                )).to.be.revertedWithCustomError(priceFeed, "UTSPriceFeed__E0");
+
+                await expect(priceFeed.connect(admin).setChainInfo(
+                    [],
+                    [1]
+                )).to.be.revertedWithCustomError(priceFeed, "UTSPriceFeed__E0");
+
+                await priceFeed.connect(admin).setChainInfo(
+                    [1, 2, 3],
+                    [4, 5, 6]
+                );
+
+                expect(await priceFeed.getRawChainInfo(1)).to.equal(4);
+                expect(await priceFeed.getRawChainInfo(2)).to.equal(5);
+                expect(await priceFeed.getRawChainInfo(3)).to.equal(6);
             });
         });
 
@@ -2622,7 +2704,7 @@ describe("UTS ERC20 V1 Tests", function () {
                 const newDstPricePerByte = 78999n;
                 const rawChainInfo = 23630279158421935699095n;
 
-                await priceFeed.connect(admin).setChainInfo(newChainId, rawChainInfo);
+                await priceFeed.connect(admin).setChainInfo([newChainId], [rawChainInfo]);
 
                 expect(await priceFeed.getDstGasPriceAtSrcNative(newChainId)).to.equal(0n);
                 expect(await priceFeed.getPriceByOffset(newGroupId, newOffset)).to.equal(0n);
@@ -2761,7 +2843,8 @@ describe("UTS ERC20 V1 Tests", function () {
                     12,
                     123,
                     1234,
-                    "0x"
+                    "0x",
+                    "0x",
                 )).to.be.revertedWithCustomError(router, "EnforcedPause");
 
                 await router.connect(admin).unpause();
@@ -3077,6 +3160,7 @@ describe("UTS ERC20 V1 Tests", function () {
                     allowedChainIds[0],
                     configMinGasLimit,
                     "0x",
+                    "0x",
                     { value: baseFeePerGasInWei * configMinGasLimit }
                 );
 
@@ -3141,6 +3225,7 @@ describe("UTS ERC20 V1 Tests", function () {
                     allowedChainIds[0],
                     configMinGasLimit,
                     "0x",
+                    "0x",
                     { value: baseFeePerGasInWei * configMinGasLimit }
                 );
 
@@ -3162,6 +3247,7 @@ describe("UTS ERC20 V1 Tests", function () {
                     allowedChainIds[0],
                     configMinGasLimit,
                     "0x",
+                    "0x",
                     { value: 1 }
                 )).to.be.revertedWithCustomError(router, "UTSRouter__E0");
 
@@ -3171,6 +3257,7 @@ describe("UTS ERC20 V1 Tests", function () {
                     tokenAmountToBridge,
                     allowedChainIds[0],
                     configMinGasLimit,
+                    "0x",
                     "0x",
                     { value: baseFeePerGasInWei * configMinGasLimit }
                 );
@@ -3185,44 +3272,17 @@ describe("UTS ERC20 V1 Tests", function () {
             it("Infinite redeem return data", async function () {
                 const { admin, user, router, zeroHash, endpoint, masterRouter, protocolId, functionSelector } = await loadFixture(globalFixture);
 
-                const UTSTokenMock = await ethers.getContractFactory("UTSTokenMock", admin);
-                const mock = await UTSTokenMock.deploy();
+                const UTSTokenMockTwo = await ethers.getContractFactory("UTSTokenMockTwo", admin);
+                const mock = await UTSTokenMockTwo.deploy(router.target);
                 await mock.waitForDeployment();
 
-                const name = "check0";
-                const symbol = "check1";
-                const decimals = 12n;
-                const initialSupply = withDecimals("1");
-                const mintable = false;
-                const globalBurnable = false;
-                const onlyRoleBurnable = false;
-                const feeModule = false;
                 const allowedChainIds = [dstChainId];
-                const configMinGasLimit = 100000n;
                 const configPeer = "0xf4050b2c873c7c8d2859c07d9f9d7166619873f7376bb93b4fc3c3efb93eec00";
                 const configDecimals = 18n;
 
-                const chainConfigs = [[configPeer, configMinGasLimit, configDecimals, false]];
-
-                await mock.connect(user).initializeToken([
-                    user.address,
-                    name,
-                    symbol,
-                    decimals,
-                    initialSupply,
-                    false,
-                    mintable,
-                    globalBurnable,
-                    onlyRoleBurnable,
-                    feeModule,
-                    router.target,
-                    allowedChainIds,
-                    chainConfigs,
-                    zeroHash
-                ]);
-
                 const amountToRedeem = withDecimals("1500");
                 const gasLimit = 1000000n;
+                const customPayload = "0xffaa0011";
 
                 const params = await encodeParamsToRedeem(
                     user,
@@ -3233,7 +3293,7 @@ describe("UTS ERC20 V1 Tests", function () {
                     configPeer,
                     configDecimals,
                     gasLimit,
-                    "0x"
+                    customPayload
                 );
 
                 const userBalanceBefore = await mock.balanceOf(user);
@@ -3254,9 +3314,9 @@ describe("UTS ERC20 V1 Tests", function () {
                 ], []);
 
                 const receipt = await tx.wait();
-                const filter = masterRouter.filters.ProposalExecuted;
-                const events = await masterRouter.queryFilter(filter, -1);
-                const args = events[0].args;
+                let filter = masterRouter.filters.ProposalExecuted;
+                let events = await masterRouter.queryFilter(filter, -1);
+                let args = events[0].args;
 
                 expect(userBalanceBefore).to.equal(await mock.balanceOf(user));
                 expect(totalSupplyBefore).to.equal(await mock.totalSupply());
@@ -3266,7 +3326,7 @@ describe("UTS ERC20 V1 Tests", function () {
                 expect(await mock.isExecutionFailed(
                     user,
                     amountToRedeem,
-                    "0x",
+                    customPayload,
                     [user.address, allowedChainIds[0], configPeer, configDecimals],
                     1
                 )).to.equal(true);
@@ -3274,13 +3334,21 @@ describe("UTS ERC20 V1 Tests", function () {
                 const hash = await endpoint.getHash(protocolId, curChainId, ethers.zeroPadValue(masterRouter.target, 32), functionSelector, params);
 
                 expect(await endpoint.lastExecution()).to.equal(hash);
+
+                filter = mock.filters.ExecutionFailed;
+                events = await mock.queryFilter(filter, -1);
+                args = events[0].args;
+
+                expect(args[0]).to.equal(user.address);
+                expect(args[1]).to.equal(amountToRedeem);
+                expect(args[2]).to.equal(customPayload);
             });
 
             it("Infinite storeFailedExecution return data", async function () {
                 const { admin, user, router, zeroHash, endpoint, masterRouter, protocolId, functionSelector } = await loadFixture(globalFixture);
 
-                const UTSTokenMockTwo = await ethers.getContractFactory("UTSTokenMockTwo", admin);
-                const mock = await UTSTokenMockTwo.deploy(router.target);
+                const UTSTokenMock = await ethers.getContractFactory("UTSTokenMock", admin);
+                const mock = await UTSTokenMock.deploy(router.target);
                 await mock.waitForDeployment();
 
                 const allowedChainIds = [dstChainId];
@@ -3561,6 +3629,7 @@ describe("UTS ERC20 V1 Tests", function () {
                     allowedChainIds[0],
                     configMinGasLimit,
                     "0x",
+                    "0x",
                     { value: baseFeePerGasInWei * configMinGasLimit - 1n }
                 )).to.be.revertedWithCustomError(router, "UTSRouter__E0");
             });
@@ -3686,6 +3755,7 @@ describe("UTS ERC20 V1 Tests", function () {
                     withDecimals("1"),
                     curChainId,
                     configMinGasLimit,
+                    "0x",
                     "0x"
                 )).to.be.revertedWithCustomError(router, "UTSRouter__E1");
             });
@@ -3813,7 +3883,8 @@ describe("UTS ERC20 V1 Tests", function () {
                     12,
                     31336,
                     1234,
-                    "0x"
+                    "0x",
+                    "0x",
                 )).to.be.revertedWithCustomError(router, "UTSRouter__E2");
 
                 await expect(mockRouter.connect(admin).setChainConfigToDestination(
@@ -3990,6 +4061,7 @@ describe("UTS ERC20 V1 Tests", function () {
                     withDecimals("1"),
                     allowedChainIds[0] + 1,
                     500000n,
+                    "0x",
                     "0x"
                 )).to.be.revertedWithCustomError(router, "UTSRouter__E5");
             });
@@ -4247,6 +4319,7 @@ describe("UTS ERC20 V1 Tests", function () {
                     12,
                     lDstChainId,
                     gasLimit - 1n,
+                    "0x",
                     "0x"
                 )).to.be.revertedWithCustomError(router, "UTSRouter__E6");
             });
@@ -4311,6 +4384,14 @@ describe("UTS ERC20 V1 Tests", function () {
                     ["0x01"],
                     []
                 )).to.be.revertedWithCustomError(router, "UTSRouter__E7");
+
+                await expect(router.connect(admin).getUpdateFee(
+                    [1, 2], [1]
+                )).to.be.revertedWithCustomError(router, "UTSRouter__E7");
+
+                await expect(router.connect(admin).getUpdateFee(
+                    [1, 2], [1]
+                )).to.be.revertedWithCustomError(router, "UTSRouter__E7");
             });
         });
     });
@@ -4331,7 +4412,7 @@ describe("UTS ERC20 V1 Tests", function () {
             expect(await factory.protocolVersion()).to.equal(globalProtocolVersion);
         });
 
-        describe("Access control", function () {
+        describe("AccessControl", function () {
             it("setRouter", async function () {
                 const { user, admin, factory } = await loadFixture(globalFixture);
 
@@ -4348,11 +4429,11 @@ describe("UTS ERC20 V1 Tests", function () {
                 const { user, admin, factory } = await loadFixture(globalFixture);
 
                 await expect(factory.connect(user).setCodeStorage(
-                    1,
-                    admin
+                    [1],
+                    [admin]
                 )).to.be.revertedWithCustomError(factory, "AccessControlUnauthorizedAccount");
 
-                await factory.connect(admin).setCodeStorage(1, admin);
+                await factory.connect(admin).setCodeStorage([1], [admin]);
 
                 expect(await factory.codeStorage(1)).to.equal(admin);
             });
@@ -4795,6 +4876,7 @@ describe("UTS ERC20 V1 Tests", function () {
                     symbol,
                     decimals,
                     initialSupply,
+                    initialSupply,
                     false,
                     mintable,
                     globalBurnable,
@@ -4871,6 +4953,25 @@ describe("UTS ERC20 V1 Tests", function () {
                     symbol,
                     decimals,
                     initialSupply,
+                    initialSupply,
+                    true,
+                    true,
+                    false,
+                    false,
+                    false,
+                    router.target,
+                    allowedChainIds,
+                    chainConfigs,
+                    salt
+                ])).to.be.revertedWithCustomError(factory, "UTSFactory__E2");
+
+                expect(factory.connect(executor).deployToken([
+                    executor.address,
+                    name,
+                    symbol,
+                    decimals,
+                    initialSupply,
+                    initialSupply,
                     true,
                     false,
                     true,
@@ -4887,6 +4988,7 @@ describe("UTS ERC20 V1 Tests", function () {
                     name,
                     symbol,
                     decimals,
+                    initialSupply,
                     initialSupply,
                     true,
                     false,
@@ -4905,6 +5007,7 @@ describe("UTS ERC20 V1 Tests", function () {
                     symbol,
                     decimals,
                     initialSupply,
+                    initialSupply,
                     true,
                     false,
                     false,
@@ -4922,6 +5025,7 @@ describe("UTS ERC20 V1 Tests", function () {
                     symbol,
                     decimals,
                     initialSupply,
+                    initialSupply,
                     true,
                     true,
                     true,
@@ -4932,6 +5036,141 @@ describe("UTS ERC20 V1 Tests", function () {
                     chainConfigs,
                     salt
                 ])).to.be.revertedWithCustomError(factory, "UTSFactory__E2");
+            });
+        });
+
+        describe("UTS Factory E3", function () {
+            it("setCodeStorage", async function () {
+                const { user, admin, factory } = await loadFixture(globalFixture);
+
+                await expect(factory.connect(admin).setCodeStorage(
+                    [1],
+                    [admin, user]
+                )).to.be.revertedWithCustomError(factory, "UTSFactory__E3");
+
+                await expect(factory.connect(admin).setCodeStorage(
+                    [1, 2],
+                    [admin]
+                )).to.be.revertedWithCustomError(factory, "UTSFactory__E3");
+
+                await expect(factory.connect(admin).setCodeStorage(
+                    [1],
+                    []
+                )).to.be.revertedWithCustomError(factory, "UTSFactory__E3");
+
+                await factory.connect(admin).setCodeStorage([1, 2, 3], [admin, user, factory.target]);
+
+                expect(await factory.codeStorage(1)).to.equal(admin);
+                expect(await factory.codeStorage(2)).to.equal(user);
+                expect(await factory.codeStorage(3)).to.equal(factory.target);
+            });
+        });
+
+        describe("UTS Factory E4", function () {
+            it("Token", async function () {
+                const { executor, factory, router } = await loadFixture(globalFixture);
+
+                const name = "check0";
+                const symbol = "check1";
+                const decimals = 12n;
+                const initialSupply = withDecimals("1");
+                const allowedChainIds = [dstChainId];
+                const configMinGasLimit = 100000n;
+                const configPeer = "0xf4050b2c873c7c8d2859c07d9f9d7166619873f7376bb93b4fc3c3efb93eec00";
+                const configDecimals = 18n;
+                const salt = "0x04050b2c873c7c8d2859c07d9f9d7166619873f7376bb93b4fc3c3efb93eec00";
+
+                const chainConfigs = [[configPeer, configMinGasLimit, configDecimals, false]];
+
+                expect(factory.connect(executor).deployToken([
+                    executor.address,
+                    name,
+                    symbol,
+                    decimals,
+                    initialSupply,
+                    initialSupply + 1n,
+                    true,
+                    false,
+                    false,
+                    false,
+                    false,
+                    router.target,
+                    allowedChainIds,
+                    chainConfigs,
+                    salt
+                ])).to.be.revertedWithCustomError(factory, "UTSFactory__E4");
+
+                expect(factory.connect(executor).deployToken([
+                    executor.address,
+                    name,
+                    symbol,
+                    decimals,
+                    0,
+                    1n,
+                    true,
+                    false,
+                    false,
+                    false,
+                    false,
+                    router.target,
+                    allowedChainIds,
+                    chainConfigs,
+                    salt
+                ])).to.be.revertedWithCustomError(factory, "UTSFactory__E4");
+
+                expect(factory.connect(executor).deployToken([
+                    executor.address,
+                    name,
+                    symbol,
+                    decimals,
+                    initialSupply + 1n,
+                    initialSupply,
+                    false,
+                    true,
+                    true,
+                    true,
+                    true,
+                    router.target,
+                    allowedChainIds,
+                    chainConfigs,
+                    salt
+                ])).to.be.revertedWithCustomError(factory, "UTSFactory__E4");
+
+                expect(factory.connect(executor).deployToken([
+                    executor.address,
+                    name,
+                    symbol,
+                    decimals,
+                    initialSupply - 1n,
+                    initialSupply,
+                    false,
+                    true,
+                    true,
+                    true,
+                    true,
+                    router.target,
+                    allowedChainIds,
+                    chainConfigs,
+                    salt
+                ])).to.be.revertedWithCustomError(factory, "UTSFactory__E4");
+
+                expect(factory.connect(executor).deployToken([
+                    executor.address,
+                    name,
+                    symbol,
+                    decimals,
+                    1n,
+                    0,
+                    false,
+                    true,
+                    false,
+                    true,
+                    false,
+                    router.target,
+                    allowedChainIds,
+                    chainConfigs,
+                    salt
+                ])).to.be.revertedWithCustomError(factory, "UTSFactory__E4");
             });
         });
     });
@@ -5083,6 +5322,7 @@ describe("UTS ERC20 V1 Tests", function () {
                     allowedChainIds[0],
                     configMinGasLimit,
                     "0x",
+                    "0x",
                     { value: configMinGasLimit }
                 )).to.be.revertedWithCustomError(deployedToken, "UTSBase__E3");
 
@@ -5092,6 +5332,7 @@ describe("UTS ERC20 V1 Tests", function () {
                     amountToBridgeZeroInput,
                     allowedChainIds[0],
                     configMinGasLimit,
+                    "0x",
                     "0x",
                     { value: configMinGasLimit }
                 )).to.be.revertedWithCustomError(deployedToken, "UTSBase__E3");
@@ -5105,6 +5346,7 @@ describe("UTS ERC20 V1 Tests", function () {
                     allowedChainIds[0],
                     configMinGasLimit,
                     "0x",
+                    "0x",
                     { value: configMinGasLimit }
                 )).to.be.revertedWithCustomError(deployedToken, "UTSBase__E3");
 
@@ -5114,6 +5356,7 @@ describe("UTS ERC20 V1 Tests", function () {
                     amountToBridgeZeroAfterConversion,
                     allowedChainIds[0],
                     configMinGasLimit,
+                    "0x",
                     "0x",
                     { value: configMinGasLimit }
                 )).to.be.revertedWithCustomError(deployedToken, "UTSBase__E3");
@@ -5157,6 +5400,7 @@ describe("UTS ERC20 V1 Tests", function () {
                     allowedChainIds[0],
                     configMinGasLimit,
                     "0x",
+                    "0x",
                     { value: configMinGasLimit }
                 )).to.be.revertedWithCustomError(deployedConnector, "UTSBase__E3");
 
@@ -5166,6 +5410,7 @@ describe("UTS ERC20 V1 Tests", function () {
                     amountToBridgeZeroInput,
                     allowedChainIds[0],
                     configMinGasLimit,
+                    "0x",
                     "0x",
                     { value: configMinGasLimit }
                 )).to.be.revertedWithCustomError(deployedConnector, "UTSBase__E3");
@@ -5179,6 +5424,7 @@ describe("UTS ERC20 V1 Tests", function () {
                     allowedChainIds[0],
                     configMinGasLimit,
                     "0x",
+                    "0x",
                     { value: configMinGasLimit }
                 )).to.be.revertedWithCustomError(deployedConnector, "UTSBase__E3");
 
@@ -5188,6 +5434,7 @@ describe("UTS ERC20 V1 Tests", function () {
                     amountToBridgeZeroAfterConversion,
                     allowedChainIds[0],
                     configMinGasLimit,
+                    "0x",
                     "0x",
                     { value: configMinGasLimit }
                 )).to.be.revertedWithCustomError(deployedConnector, "UTSBase__E3");
@@ -5248,6 +5495,7 @@ describe("UTS ERC20 V1 Tests", function () {
                     allowedChainIds[0],
                     configMinGasLimit,
                     "0x",
+                    "0x",
                     { value: baseFeePerGasInWei * configMinGasLimit }
                 )).to.be.revertedWithCustomError(deployedToken, "UTSBase__E5");
 
@@ -5257,6 +5505,7 @@ describe("UTS ERC20 V1 Tests", function () {
                     1n,
                     allowedChainIds[0],
                     configMinGasLimit,
+                    "0x",
                     "0x",
                     { value: baseFeePerGasInWei * configMinGasLimit }
                 )).to.be.revertedWithCustomError(deployedToken, "UTSBase__E5");
@@ -5741,11 +5990,11 @@ describe("UTS ERC20 V1 Tests", function () {
                 const tokenBalanceBefore = await deployedToken.balanceOf(user);
                 const tokenAmountToBridge = 1000n;
                 const etherBalanceBefore = await ethers.provider.getBalance(feeCollector);
-                const estimateValues = await deployedToken.estimateBridgeFee(allowedChainIds[0], configMinGasLimit, 0n);
+                const estimateValues = await deployedToken.estimateBridgeFee(allowedChainIds[0], configMinGasLimit, 0n, "0x");
 
                 expect(estimateValues[1]).to.equal(await router.dstMinGasLimit(allowedChainIds[0]));
 
-                const bridgePayment = await router.getBridgeFee(allowedChainIds[0], configMinGasLimit, 0n);
+                const bridgePayment = await router.getBridgeFee(allowedChainIds[0], configMinGasLimit, 0n, "0x");
 
                 await deployedToken.connect(user).bridge(
                     user.address,
@@ -5753,6 +6002,7 @@ describe("UTS ERC20 V1 Tests", function () {
                     tokenAmountToBridge,
                     allowedChainIds[0],
                     configMinGasLimit,
+                    "0x",
                     "0x",
                     { value: baseFeePerGasInWei * configMinGasLimit }
                 );
@@ -5807,7 +6057,7 @@ describe("UTS ERC20 V1 Tests", function () {
                 const tokenBalanceBefore = await deployedToken.balanceOf(user);
                 const tokenAmountToBridge = 1000n;
                 const etherBalanceBefore = await ethers.provider.getBalance(feeCollector);
-                const estimateValues = await deployedToken.estimateBridgeFee(allowedChainIds[0], configMinGasLimit, 0n);
+                const estimateValues = await deployedToken.estimateBridgeFee(allowedChainIds[0], configMinGasLimit, 0n, "0x");
 
                 expect(estimateValues[1]).to.equal(configMinGasLimit);
 
@@ -5817,6 +6067,7 @@ describe("UTS ERC20 V1 Tests", function () {
                     tokenAmountToBridge,
                     allowedChainIds[0],
                     configMinGasLimit,
+                    "0x",
                     "0x",
                     { value: baseFeePerGasInWei * configMinGasLimit }
                 );
@@ -5865,6 +6116,7 @@ describe("UTS ERC20 V1 Tests", function () {
                     tokenAmountToBridge,
                     allowedChainIds[0],
                     configMinGasLimit,
+                    "0x",
                     "0x",
                     { value: baseFeePerGasInWei * configMinGasLimit }
                 );
@@ -6070,8 +6322,8 @@ describe("UTS ERC20 V1 Tests", function () {
             it("Failure case", async function () {
                 const { admin, user, router, zeroHash, endpoint, masterRouter, protocolId, functionSelector } = await loadFixture(globalFixture);
 
-                const UTSTokenMockTwo = await ethers.getContractFactory("UTSTokenMockTwo", admin);
-                const mock = await UTSTokenMockTwo.deploy(router.target);
+                const UTSTokenMock = await ethers.getContractFactory("UTSTokenMock", admin);
+                const mock = await UTSTokenMock.deploy(router.target);
                 await mock.waitForDeployment();
 
                 const allowedChainIds = [dstChainId];
@@ -6904,7 +7156,7 @@ describe("UTS ERC20 V1 Tests", function () {
 
     describe("UTS Registry", function () {
         describe("Deployments", function () {
-            it("Access control", async function () {
+            it("AccessControl", async function () {
                 const { user, admin, registry, factory } = await loadFixture(globalFixture);
 
                 expect(await registry.validateFactory(factory.target)).to.equal(true);
@@ -7080,11 +7332,7 @@ describe("UTS ERC20 V1 Tests", function () {
             });
 
             it("UTS Registry E1", async function () {
-                const { registry, admin, user, router, zeroHash } = await loadFixture(globalFixture);
-
-                const UTSToken = await ethers.getContractFactory("UTSToken", admin);
-                const mock = await UTSToken.deploy();
-                await mock.waitForDeployment();
+                const { registry, admin } = await loadFixture(globalFixture);
 
                 const allowedChainIds = [dstChainId];
                 const configPeer = "0xf4050b2c873c7c8d2859c07d9f9d7166619873f7376bb93b4fc3c3efb93eec00";
@@ -7093,26 +7341,13 @@ describe("UTS ERC20 V1 Tests", function () {
 
                 const chainConfigs = [[configPeer, gasLimit, configDecimals, false]];
 
-                await expect(mock.connect(user).initializeToken([
-                    user.address,
-                    "",
-                    "",
-                    1,
-                    1,
-                    false,
-                    true,
-                    true,
-                    true,
-                    true,
-                    router.target,
-                    allowedChainIds,
-                    chainConfigs,
-                    zeroHash
-                ])).to.be.revertedWithCustomError(registry, "UTSRegistry__E1");
-
                 await expect(registry.connect(admin).updateChainConfigs(
                     allowedChainIds,
                     chainConfigs
+                )).to.be.revertedWithCustomError(registry, "UTSRegistry__E1");
+
+                await expect(registry.connect(admin).updateRouter(
+                    admin
                 )).to.be.revertedWithCustomError(registry, "UTSRegistry__E1");
             });
         });
@@ -7782,6 +8017,7 @@ describe("UTS ERC20 V1 Tests", function () {
                     allowedChainIds[0],
                     configMinGasLimit,
                     "0x",
+                    "0x",
                     { value: baseFeePerGasInWei * configMinGasLimit }
                 );
 
@@ -7843,6 +8079,7 @@ describe("UTS ERC20 V1 Tests", function () {
                     amountToBridge,
                     allowedChainIds[0],
                     configMinGasLimit,
+                    "0x",
                     "0x",
                     { value: configMinGasLimit }
                 )).to.be.revertedWithCustomError(deployedToken, "ERC20InsufficientAllowance");
@@ -7906,6 +8143,7 @@ describe("UTS ERC20 V1 Tests", function () {
                     amountToBridge,
                     allowedChainIds[0],
                     configMinGasLimit,
+                    "0x",
                     "0x",
                     { value: baseFeePerGasInWei * configMinGasLimit }
                 );
@@ -7999,6 +8237,7 @@ describe("UTS ERC20 V1 Tests", function () {
                     amountToBridge,
                     allowedChainIds[0],
                     configMinGasLimit,
+                    "0x",
                     "0x",
                     { value: baseFeePerGasInWei * configMinGasLimit }
                 );
@@ -8097,6 +8336,7 @@ describe("UTS ERC20 V1 Tests", function () {
                     allowedChainIds[0],
                     configMinGasLimit,
                     "0x",
+                    "0x",
                     { value: baseFeePerGasInWei * configMinGasLimit }
                 );
 
@@ -8193,6 +8433,7 @@ describe("UTS ERC20 V1 Tests", function () {
                     allowedChainIds[0],
                     configMinGasLimit,
                     "0x",
+                    "0x",
                     { value: baseFeePerGasInWei * configMinGasLimit }
                 );
 
@@ -8285,6 +8526,7 @@ describe("UTS ERC20 V1 Tests", function () {
                     amountToBridge,
                     allowedChainIds[0],
                     configMinGasLimit,
+                    "0x",
                     "0x",
                     { value: baseFeePerGasInWei * configMinGasLimit }
                 );
@@ -8388,6 +8630,7 @@ describe("UTS ERC20 V1 Tests", function () {
                     allowedChainIds[0],
                     configMinGasLimit,
                     "0x",
+                    "0x",
                     { value: baseFeePerGasInWei * configMinGasLimit }
                 );
 
@@ -8456,6 +8699,7 @@ describe("UTS ERC20 V1 Tests", function () {
                 symbol,
                 decimals,
                 initialSupply,
+                0,
                 pureToken,
                 mintable,
                 globalBurnable,
@@ -8486,6 +8730,7 @@ describe("UTS ERC20 V1 Tests", function () {
                 symbol,
                 decimals,
                 newInitialSupply,
+                newInitialSupply,
                 pureToken,
                 mintable,
                 globalBurnable,
@@ -8508,6 +8753,7 @@ describe("UTS ERC20 V1 Tests", function () {
             expect(await deployedTokenTwo.underlyingToken()).to.equal(deployedTokenTwo.target);
 
             const newSaltTwo = "0x04050b2c873c7c8d2859c07d9f9d7166619873f7376bb93b4fc3c3efb93eec11";
+            const mintedAmountToOwner = withDecimals("3579");
 
             await factory.connect(user).deployToken([
                 user.address,
@@ -8515,8 +8761,9 @@ describe("UTS ERC20 V1 Tests", function () {
                 symbol,
                 decimals,
                 initialSupply,
+                mintedAmountToOwner,
                 pureToken,
-                true,
+                mintable,
                 globalBurnable,
                 onlyRoleBurnable,
                 feeModule,
@@ -8530,14 +8777,14 @@ describe("UTS ERC20 V1 Tests", function () {
             const deployedTokenThree = await ethers.getContractAt("UTSTokenPure", precomputeThree.deployment);
             expect(precomputeThree.hasCode).to.equal(true);
 
-            expect(await deployedTokenThree.balanceOf(deployedTokenThree.target)).to.equal(0);
-            expect(await deployedTokenThree.balanceOf(user)).to.equal(initialSupply);
+            expect(await deployedTokenThree.balanceOf(deployedTokenThree.target)).to.equal(initialSupply - mintedAmountToOwner);
+            expect(await deployedTokenThree.balanceOf(user)).to.equal(mintedAmountToOwner);
             expect(await deployedTokenThree.totalSupply()).to.equal(initialSupply);
             expect(await deployedTokenThree.decimals()).to.equal(decimals);
             expect(await deployedTokenThree.underlyingToken()).to.equal(deployedTokenThree.target);
         });
 
-        it("Access control", async function () {
+        it("AccessControl", async function () {
             const { factory, router, user, admin } = await loadFixture(globalFixture);
 
             const name = "check0";
@@ -8562,6 +8809,7 @@ describe("UTS ERC20 V1 Tests", function () {
                 symbol,
                 decimals,
                 initialSupply,
+                initialSupply,
                 pureToken,
                 mintable,
                 globalBurnable,
@@ -8576,6 +8824,10 @@ describe("UTS ERC20 V1 Tests", function () {
             const precompute = await factory.getPrecomputedAddress(4, user.address, salt, false);
             const deployedToken = await ethers.getContractAt("UTSTokenPure", precompute.deployment);
             expect(precompute.hasCode).to.equal(true);
+
+            expect(await deployedToken.balanceOf(deployedToken.target)).to.equal(initialSupply - initialSupply);
+            expect(await deployedToken.balanceOf(user)).to.equal(initialSupply);
+            expect(await deployedToken.totalSupply()).to.equal(initialSupply);
 
             await expect(deployedToken.connect(admin).setRouter(
                 admin.address
@@ -8612,6 +8864,7 @@ describe("UTS ERC20 V1 Tests", function () {
                 symbol,
                 decimals,
                 initialSupply,
+                initialSupply,
                 pureToken,
                 mintable,
                 globalBurnable,
@@ -8635,6 +8888,7 @@ describe("UTS ERC20 V1 Tests", function () {
                 amountToTransfer,
                 dstChainId,
                 configMinGasLimit,
+                "0x",
                 "0x"
             )).to.be.revertedWithCustomError(deployedToken, "ERC20InsufficientAllowance");
 
@@ -8644,11 +8898,12 @@ describe("UTS ERC20 V1 Tests", function () {
                 amountToTransfer,
                 dstChainId,
                 configMinGasLimit,
+                "0x",
                 "0x"
             )).to.be.revertedWithCustomError(deployedToken, "ERC20InsufficientAllowance");
         });
 
-        it("Bridge test", async function () {
+        it("Bridge", async function () {
             const { factory, router, user } = await loadFixture(globalFixture);
 
             const name = "check0";
@@ -8673,6 +8928,7 @@ describe("UTS ERC20 V1 Tests", function () {
                 symbol,
                 decimals,
                 initialSupply,
+                0,
                 pureToken,
                 mintable,
                 globalBurnable,
@@ -8688,6 +8944,10 @@ describe("UTS ERC20 V1 Tests", function () {
             const deployedToken = await ethers.getContractAt("UTSTokenPure", precompute.deployment);
             expect(precompute.hasCode).to.equal(true);
 
+            expect(await deployedToken.balanceOf(deployedToken.target)).to.equal(initialSupply);
+            expect(await deployedToken.balanceOf(user)).to.equal(0);
+            expect(await deployedToken.totalSupply()).to.equal(initialSupply);
+
             await deployedToken.connect(user).setRouter(user);
 
             await expect(() => deployedToken.connect(user).redeem(
@@ -8701,7 +8961,7 @@ describe("UTS ERC20 V1 Tests", function () {
 
             const amountToBridge = withDecimals("100");
 
-            const bridgePayment = await router.getBridgeFee(dstChainId, configMinGasLimit, 0n);
+            const bridgePayment = await router.getBridgeFee(dstChainId, configMinGasLimit, 0n, "0x");
 
             await expect(() => deployedToken.connect(user).bridge(
                 user.address,
@@ -8710,11 +8970,12 @@ describe("UTS ERC20 V1 Tests", function () {
                 dstChainId,
                 configMinGasLimit,
                 "0x",
+                "0x",
                 { value: bridgePayment }
             )).to.changeTokenBalances(deployedToken, [user, deployedToken.target], [-amountToBridge, amountToBridge]);
         });
 
-        it("Redeem test", async function () {
+        it("Redeem", async function () {
             const { functionSelector, masterRouter, zeroHash, protocolId, endpoint, factory, router, user } = await loadFixture(globalFixture);
 
             const name = "check0";
@@ -8739,6 +9000,7 @@ describe("UTS ERC20 V1 Tests", function () {
                 symbol,
                 decimals,
                 initialSupply,
+                0,
                 pureToken,
                 mintable,
                 globalBurnable,
@@ -8753,6 +9015,10 @@ describe("UTS ERC20 V1 Tests", function () {
             const precompute = await factory.getPrecomputedAddress(4, user.address, salt, false);
             const deployedToken = await ethers.getContractAt("UTSTokenPure", precompute.deployment);
             expect(precompute.hasCode).to.equal(true);
+
+            expect(await deployedToken.balanceOf(deployedToken.target)).to.equal(initialSupply);
+            expect(await deployedToken.balanceOf(user)).to.equal(0);
+            expect(await deployedToken.totalSupply()).to.equal(initialSupply);
 
             const amountToBridge = withDecimals("100");
 
@@ -8813,6 +9079,7 @@ describe("UTS ERC20 V1 Tests", function () {
                 name,
                 symbol,
                 decimals,
+                initialSupply,
                 initialSupply,
                 pureToken,
                 mintable,
@@ -8930,7 +9197,7 @@ describe("UTS ERC20 V1 Tests", function () {
             expect(await deployedConnector.feeCollector()).to.equal(zeroAddress);
         });
 
-        it("Access control", async function () {
+        it("AccessControl", async function () {
             const { admin, justToken, adminRole, zeroHash, zeroAddress, registry, factory, router, user, executor } = await loadFixture(globalFixture);
 
             const name = "check0";
@@ -9255,6 +9522,7 @@ describe("UTS ERC20 V1 Tests", function () {
                 allowedChainIds[0],
                 configMinGasLimit,
                 bridgeFeeRate + 1n,
+                "0x",
                 "0x"
             )).to.be.revertedWithCustomError(deployedConnector, "UTSFeeModule__E1");
 
@@ -9265,6 +9533,7 @@ describe("UTS ERC20 V1 Tests", function () {
                 allowedChainIds[0],
                 configMinGasLimit,
                 bridgeFeeRate - 1n,
+                "0x",
                 "0x"
             )).to.be.revertedWithCustomError(deployedConnector, "UTSFeeModule__E1");
         });
@@ -9322,7 +9591,7 @@ describe("UTS ERC20 V1 Tests", function () {
             const feeAmount = amountToBridge * feeRate / 10000n;
 
             const totalSupplyBefore = await deployedToken.totalSupply();
-            const bridgePayment = await router.getBridgeFee(allowedChainIds[0], configMinGasLimit, 0n);
+            const bridgePayment = await router.getBridgeFee(allowedChainIds[0], configMinGasLimit, 0n, "0x");
 
             await expect(() => deployedToken.connect(user).bridge(
                 user,
@@ -9330,6 +9599,7 @@ describe("UTS ERC20 V1 Tests", function () {
                 amountToBridge,
                 allowedChainIds[0],
                 configMinGasLimit,
+                "0x",
                 "0x",
                 { value: bridgePayment }
             )).to.changeTokenBalances(deployedToken, [user, executor], [-amountToBridge, feeAmount]);
@@ -9399,7 +9669,7 @@ describe("UTS ERC20 V1 Tests", function () {
             const feeAmount = amountToBridge * feeRate / 10000n;
 
             const totalSupplyBefore = await deployedToken.totalSupply();
-            const bridgePayment = await router.getBridgeFee(allowedChainIds[0], configMinGasLimit, 0n);
+            const bridgePayment = await router.getBridgeFee(allowedChainIds[0], configMinGasLimit, 0n, "0x");
 
             await deployedToken.connect(user).transfer(admin, amountToBridge);
             await deployedToken.connect(admin).approve(user, amountToBridge);
@@ -9410,6 +9680,7 @@ describe("UTS ERC20 V1 Tests", function () {
                 amountToBridge,
                 allowedChainIds[0],
                 configMinGasLimit,
+                "0x",
                 "0x",
                 { value: bridgePayment }
             )).to.changeTokenBalances(deployedToken, [admin, executor], [-amountToBridge, feeAmount]);
@@ -9479,7 +9750,7 @@ describe("UTS ERC20 V1 Tests", function () {
             const feeAmount = amountToBridge * feeRate / 10000n;
 
             const totalSupplyBefore = await deployedToken.totalSupply();
-            const bridgePayment = await router.getBridgeFee(allowedChainIds[0], configMinGasLimit, 0n);
+            const bridgePayment = await router.getBridgeFee(allowedChainIds[0], configMinGasLimit, 0n, "0x");
 
             await expect(() => deployedToken.connect(user).bridgeWithSlippageCheck(
                 user,
@@ -9488,6 +9759,7 @@ describe("UTS ERC20 V1 Tests", function () {
                 allowedChainIds[0],
                 configMinGasLimit,
                 feeRate,
+                "0x",
                 "0x",
                 { value: bridgePayment }
             )).to.changeTokenBalances(deployedToken, [user, executor], [-amountToBridge, feeAmount]);
@@ -9541,7 +9813,7 @@ describe("UTS ERC20 V1 Tests", function () {
             const userBalanceBefore = await justToken.balanceOf(user);
             const executorBalanceBefore = await justToken.balanceOf(executor);
             const connectorBalanceBefore = await justToken.balanceOf(deployedConnector.target);
-            const bridgePayment = await router.getBridgeFee(allowedChainIds[0], configMinGasLimit, 0n);
+            const bridgePayment = await router.getBridgeFee(allowedChainIds[0], configMinGasLimit, 0n, "0x");
 
             await justToken.connect(user).approve(deployedConnector.target, amountToBridge);
 
@@ -9551,6 +9823,7 @@ describe("UTS ERC20 V1 Tests", function () {
                 amountToBridge,
                 allowedChainIds[0],
                 configMinGasLimit,
+                "0x",
                 "0x",
                 { value: bridgePayment }
             )).to.changeTokenBalances(justToken, [user, executor, deployedConnector], [-amountToBridge, feeAmount, amountToBridge - feeAmount]);
@@ -9615,7 +9888,7 @@ describe("UTS ERC20 V1 Tests", function () {
             const userBalanceBefore = await justToken.balanceOf(user);
             const executorBalanceBefore = await justToken.balanceOf(executor);
             const connectorBalanceBefore = await justToken.balanceOf(deployedConnector.target);
-            const bridgePayment = await router.getBridgeFee(allowedChainIds[0], configMinGasLimit, 0n);
+            const bridgePayment = await router.getBridgeFee(allowedChainIds[0], configMinGasLimit, 0n, "0x");
 
             await justToken.connect(user).approve(deployedConnector.target, amountToBridge);
 
@@ -9626,6 +9899,7 @@ describe("UTS ERC20 V1 Tests", function () {
                 allowedChainIds[0],
                 configMinGasLimit,
                 feeRate,
+                "0x",
                 "0x",
                 { value: bridgePayment }
             )).to.changeTokenBalances(justToken, [user, executor, deployedConnector], [-amountToBridge, feeAmount, amountToBridge - feeAmount]);
@@ -9674,6 +9948,7 @@ describe("UTS ERC20 V1 Tests", function () {
                     "name",
                     "symbol",
                     18,
+                    10000000000000,
                     10000000000000,
                     true,
                     true,
@@ -9730,6 +10005,7 @@ describe("UTS ERC20 V1 Tests", function () {
                     "name",
                     "symbol",
                     18,
+                    10000000000000,
                     10000000000000,
                     true,
                     true,
@@ -9875,6 +10151,7 @@ describe("UTS ERC20 V1 Tests", function () {
                     "symbol",
                     18,
                     10000000000000,
+                    10000000000000,
                     false,
                     true,
                     true,
@@ -9891,6 +10168,104 @@ describe("UTS ERC20 V1 Tests", function () {
                 ], dRouter.target)).to.be.revertedWithCustomError(dRouter, "UTSDeploymentRouter__E1");
             });
 
+            it("UTS DeploymentRouter E3", async function () {
+                const { user, router, dRouter } = await loadFixture(globalFixture);
+
+                let tokenDeployParams = await dRouter.getDeployTokenParams([
+                    user.address,
+                    "name",
+                    "symbol",
+                    18,
+                    10000000000000,
+                    10000000000000,
+                    false,
+                    true,
+                    true,
+                    false,
+                    false,
+                    router.target,
+                    [1],
+                    [],
+                    "0x04050b2c873c7c8d2859c07d9f9d7166619873f7376bb93b4fc3c3efb93eec00"
+                ]);
+
+                await expect(dRouter.connect(user).sendDeployRequest([
+                    [137, false, tokenDeployParams]
+                ], dRouter.target)).to.be.revertedWithCustomError(dRouter, "UTSDeploymentRouter__E3");
+
+                tokenDeployParams = await dRouter.getDeployTokenParams([
+                    user.address,
+                    "name",
+                    "symbol",
+                    18,
+                    10000000000000,
+                    10000000000000,
+                    false,
+                    true,
+                    true,
+                    false,
+                    false,
+                    router.target,
+                    [],
+                    [["0x04050b2c873c7c8d2859c07d9f9d7166619873f7376bb93b4fc3c3efb93eec00", 1, 1, false]],
+                    "0x04050b2c873c7c8d2859c07d9f9d7166619873f7376bb93b4fc3c3efb93eec00"
+                ]);
+
+                await expect(dRouter.connect(user).sendDeployRequest([
+                    [137, false, tokenDeployParams]
+                ], dRouter.target)).to.be.revertedWithCustomError(dRouter, "UTSDeploymentRouter__E3");
+
+                let connectorDeployParams = await dRouter.getDeployConnectorParams([
+                    user.address,
+                    user.address,
+                    false,
+                    router.target,
+                    [1],
+                    [],
+                    "0x04050b2c873c7c8d2859c07d9f9d7166619873f7376bb93b4fc3c3efb93eec00"
+                ]);
+
+                await expect(dRouter.connect(user).sendDeployRequest([
+                    [137, true, connectorDeployParams]
+                ], dRouter.target)).to.be.revertedWithCustomError(dRouter, "UTSDeploymentRouter__E3");
+
+                connectorDeployParams = await dRouter.getDeployConnectorParams([
+                    user.address,
+                    user.address,
+                    false,
+                    router.target,
+                    [],
+                    [["0x04050b2c873c7c8d2859c07d9f9d7166619873f7376bb93b4fc3c3efb93eec00", 1, 1, false]],
+                    "0x04050b2c873c7c8d2859c07d9f9d7166619873f7376bb93b4fc3c3efb93eec00"
+                ]);
+
+                await expect(dRouter.connect(user).sendDeployRequest([
+                    [137, true, connectorDeployParams]
+                ], dRouter.target)).to.be.revertedWithCustomError(dRouter, "UTSDeploymentRouter__E3");
+
+                tokenDeployParams = await dRouter.getDeployTokenParams([
+                    user.address,
+                    "name",
+                    "symbol",
+                    18,
+                    10000000000000,
+                    10000000000000,
+                    false,
+                    true,
+                    true,
+                    false,
+                    false,
+                    router.target,
+                    [],
+                    [],
+                    "0x04050b2c873c7c8d2859c07d9f9d7166619873f7376bb93b4fc3c3efb93eec00"
+                ]);
+
+                await expect(dRouter.connect(user).sendDeployRequest([
+                    [137, false, tokenDeployParams], [137, true, connectorDeployParams]
+                ], dRouter.target)).to.be.revertedWithCustomError(dRouter, "UTSDeploymentRouter__E3");
+            });
+
             it("UTS DeploymentRouter E4", async function () {
                 const { router, user, dRouter } = await loadFixture(globalFixture);
 
@@ -9900,6 +10275,29 @@ describe("UTS ERC20 V1 Tests", function () {
                     "symbol",
                     18,
                     10000000000000,
+                    10000000000000,
+                    true,
+                    true,
+                    false,
+                    false,
+                    false,
+                    router.target,
+                    [],
+                    [],
+                    "0x04050b2c873c7c8d2859c07d9f9d7166619873f7376bb93b4fc3c3efb93eec00"
+                ]);
+
+                await expect(dRouter.connect(user).sendDeployRequest([
+                    [137, false, tokenDeployParams]
+                ], dRouter.target)).to.be.revertedWithCustomError(dRouter, "UTSDeploymentRouter__E4");
+
+                tokenDeployParams = await dRouter.getDeployTokenParams([
+                    user.address,
+                    "name",
+                    "symbol",
+                    18,
+                    10000000000000,
+                    10000000000000,
                     true,
                     false,
                     true,
@@ -9920,6 +10318,7 @@ describe("UTS ERC20 V1 Tests", function () {
                     "name",
                     "symbol",
                     18,
+                    10000000000000,
                     10000000000000,
                     true,
                     false,
@@ -9942,6 +10341,7 @@ describe("UTS ERC20 V1 Tests", function () {
                     "symbol",
                     18,
                     10000000000000,
+                    10000000000000,
                     true,
                     false,
                     false,
@@ -9962,6 +10362,7 @@ describe("UTS ERC20 V1 Tests", function () {
                     "name",
                     "symbol",
                     18,
+                    10000000000000,
                     10000000000000,
                     true,
                     true,
@@ -9983,6 +10384,7 @@ describe("UTS ERC20 V1 Tests", function () {
                     "name",
                     "symbol",
                     18,
+                    10000000000000,
                     10000000000000,
                     false,
                     false,
@@ -10018,6 +10420,7 @@ describe("UTS ERC20 V1 Tests", function () {
                     "name",
                     "symbol",
                     18,
+                    10000000000000,
                     10000000000000,
                     true,
                     false,
@@ -10067,6 +10470,98 @@ describe("UTS ERC20 V1 Tests", function () {
                 )).to.be.revertedWithCustomError(dRouter, "UTSDeploymentRouter__E5");
             });
 
+            it("UTS DeploymentRouter E6", async function () {
+                const { router, user, dRouter } = await loadFixture(globalFixture);
+
+                let tokenDeployParams = await dRouter.getDeployTokenParams([
+                    user.address,
+                    "name",
+                    "symbol",
+                    18,
+                    10000000000000,
+                    10000000000001,
+                    true,
+                    false,
+                    false,
+                    false,
+                    false,
+                    router.target,
+                    [],
+                    [],
+                    "0x04050b2c873c7c8d2859c07d9f9d7166619873f7376bb93b4fc3c3efb93eec00"
+                ]);
+
+                await expect(dRouter.connect(user).sendDeployRequest([
+                    [137, false, tokenDeployParams]
+                ], dRouter.target)).to.be.revertedWithCustomError(dRouter, "UTSDeploymentRouter__E6");
+
+                tokenDeployParams = await dRouter.getDeployTokenParams([
+                    user.address,
+                    "name",
+                    "symbol",
+                    18,
+                    0,
+                    1,
+                    true,
+                    false,
+                    false,
+                    false,
+                    false,
+                    router.target,
+                    [],
+                    [],
+                    "0x04050b2c873c7c8d2859c07d9f9d7166619873f7376bb93b4fc3c3efb93eec00"
+                ]);
+
+                await expect(dRouter.connect(user).sendDeployRequest([
+                    [137, false, tokenDeployParams]
+                ], dRouter.target)).to.be.revertedWithCustomError(dRouter, "UTSDeploymentRouter__E6");
+
+                tokenDeployParams = await dRouter.getDeployTokenParams([
+                    user.address,
+                    "name",
+                    "symbol",
+                    18,
+                    10000000000000,
+                    10000000000001,
+                    false,
+                    false,
+                    false,
+                    false,
+                    false,
+                    router.target,
+                    [],
+                    [],
+                    "0x04050b2c873c7c8d2859c07d9f9d7166619873f7376bb93b4fc3c3efb93eec00"
+                ]);
+
+                await expect(dRouter.connect(user).sendDeployRequest([
+                    [137, false, tokenDeployParams]
+                ], dRouter.target)).to.be.revertedWithCustomError(dRouter, "UTSDeploymentRouter__E6");
+
+                tokenDeployParams = await dRouter.getDeployTokenParams([
+                    user.address,
+                    "name",
+                    "symbol",
+                    18,
+                    0,
+                    1,
+                    false,
+                    false,
+                    true,
+                    false,
+                    true,
+                    router.target,
+                    [],
+                    [],
+                    "0x04050b2c873c7c8d2859c07d9f9d7166619873f7376bb93b4fc3c3efb93eec00"
+                ]);
+
+                await expect(dRouter.connect(user).sendDeployRequest([
+                    [137, false, tokenDeployParams]
+                ], dRouter.target)).to.be.revertedWithCustomError(dRouter, "UTSDeploymentRouter__E6");
+            });
+
             it("Should revert by wrong encoded params", async function () {
                 const { router, user, dRouter } = await loadFixture(globalFixture);
 
@@ -10077,6 +10572,7 @@ describe("UTS ERC20 V1 Tests", function () {
                     "name",
                     "symbol",
                     18,
+                    10000000000000,
                     10000000000000,
                     false,
                     true,
@@ -10142,6 +10638,7 @@ describe("UTS ERC20 V1 Tests", function () {
                     "name",
                     "symbol",
                     18n,
+                    10000000000000n,
                     10000000000000n,
                     false,
                     true,
@@ -10260,6 +10757,7 @@ describe("UTS ERC20 V1 Tests", function () {
                     "name",
                     "symbol",
                     18,
+                    10000000000000,
                     10000000000000,
                     true,
                     true,
@@ -10381,6 +10879,7 @@ describe("UTS ERC20 V1 Tests", function () {
                     "symbol",
                     18n,
                     10000000000000n,
+                    10000000000000n,
                     true,
                     true,
                     false,
@@ -10475,6 +10974,7 @@ describe("UTS ERC20 V1 Tests", function () {
                     "name",
                     "symbol",
                     18n,
+                    10000000000000n,
                     10000000000000n,
                     true,
                     true,
@@ -10593,6 +11093,7 @@ describe("UTS ERC20 V1 Tests", function () {
                     "name",
                     "symbol",
                     18n,
+                    10000000000000n,
                     10000000000000n,
                     true,
                     true,
@@ -10720,6 +11221,7 @@ describe("UTS ERC20 V1 Tests", function () {
                     "symbol",
                     18,
                     10000000000000,
+                    10000000000000,
                     true,
                     true,
                     false,
@@ -10767,6 +11269,7 @@ describe("UTS ERC20 V1 Tests", function () {
                     "name",
                     "symbol",
                     18,
+                    10000000000000,
                     10000000000000,
                     true,
                     true,
@@ -10963,6 +11466,7 @@ describe("UTS ERC20 V1 Tests", function () {
                     "symbol",
                     18,
                     10000000000000,
+                    10000000000000,
                     true,
                     true,
                     false,
@@ -11013,6 +11517,7 @@ describe("UTS ERC20 V1 Tests", function () {
                     "name",
                     "symbol",
                     18,
+                    10000000000000,
                     10000000000000,
                     true,
                     true,
@@ -11099,6 +11604,7 @@ describe("UTS ERC20 V1 Tests", function () {
                     "name",
                     "symbol",
                     18,
+                    10000000000000,
                     10000000000000,
                     false,
                     true,
@@ -11189,6 +11695,7 @@ describe("UTS ERC20 V1 Tests", function () {
                     "symbol",
                     18,
                     10000000000000,
+                    10000000000000,
                     false,
                     false,
                     false,
@@ -11225,6 +11732,74 @@ describe("UTS ERC20 V1 Tests", function () {
                 expect(await endpoint.lastExecution()).to.equal(hash);
             });
 
+            it("Should return error code by paused factory", async function () {
+                const { admin, pauserRole, executor, factory, endpoint, user, functionSelector, masterRouter, zeroHash, protocolId, router, dRouter } = await loadFixture(globalFixture);
+
+                const name = "check0";
+                const symbol = "check1";
+                const decimals = 12n;
+                const initialSupply = withDecimals("1");
+                const mintable = false;
+                const globalBurnable = false;
+                const onlyRoleBurnable = false;
+                const feeModule = false;
+                const allowedChainIds = [dstChainId];
+                const configMinGasLimit = 100000n;
+                const configPeer = "0xf4050b2c873c7c8d2859c07d9f9d7166619873f7376bb93b4fc3c3efb93eec00";
+                const configDecimals = 18n;
+                const salt = "0x04050b2c873c7c8d2859c07d9f9d7166619873f7376bb93b4fc3c3efb93eec00";
+
+                const chainConfigs = [[configPeer, configMinGasLimit, configDecimals, false]];
+
+                const [tokenDeployParams, , params] = await encodeParamsToDeployToken(
+                    dRouter,
+                    factory,
+                    executor,
+                    user,
+                    name,
+                    symbol,
+                    decimals,
+                    initialSupply,
+                    initialSupply,
+                    mintable,
+                    globalBurnable,
+                    onlyRoleBurnable,
+                    feeModule,
+                    router,
+                    allowedChainIds,
+                    chainConfigs,
+                    salt
+                );
+
+                await factory.connect(admin).grantRole(pauserRole, admin);
+                await factory.connect(admin).pause();
+
+                const tx = await endpoint.executeOperation([
+                    protocolId,
+                    0,
+                    dstChainId,
+                    0,
+                    [zeroHash, zeroHash],
+                    0,
+                    curChainId,
+                    ethers.zeroPadValue(masterRouter.target, 32),
+                    functionSelector,
+                    params,
+                    "0x"
+                ], []);
+
+                await tx.wait();
+                const filter = masterRouter.filters.ProposalExecuted;
+                const events = await masterRouter.queryFilter(filter, -1);
+                const args = events[0].args;
+
+                expect(await args[0]).to.equal(3);
+
+                const hash = await endpoint.getHash(protocolId, curChainId, ethers.zeroPadValue(masterRouter.target, 32), functionSelector, params);
+
+                expect(await endpoint.lastExecution()).to.equal(hash);
+            });
+
             it("Should return error code by invalid protocol version", async function () {
                 const { factory, endpoint, user, functionSelector, masterRouter, zeroHash, protocolId, router, dRouter } = await loadFixture(globalFixture);
 
@@ -11233,6 +11808,7 @@ describe("UTS ERC20 V1 Tests", function () {
                     "name",
                     "symbol",
                     18,
+                    10000000000000,
                     10000000000000,
                     false,
                     true,

@@ -13,6 +13,7 @@ import "contracts/libraries/DecimalsConverter.sol";
 
 import "./interfaces/IUTSFactory.sol";
 import "./interfaces/IUTSDeploymentRouter.sol";
+import "contracts/interfaces/IPausable.sol";
 import "contracts/interfaces/IUTSRegistry.sol";
 import "contracts/interfaces/IUTSPriceFeed.sol";
 import "contracts/interfaces/IUTSMasterRouter.sol";
@@ -55,6 +56,7 @@ contract UTSDeploymentRouter is IUTSDeploymentRouter, AccessControlUpgradeable, 
     error UTSDeploymentRouter__E3();     // arguments length mismatch
     error UTSDeploymentRouter__E4();     // unsupported configuration
     error UTSDeploymentRouter__E5();     // insufficient {paymentAmount}
+    error UTSDeploymentRouter__E6();     // invalid {mintedAmountToOwner}
 
     event ConfigFactorySet(uint256 indexed chainId, bytes newFactory, address indexed caller);
     event ConfigProtocolFeeSet(uint256 indexed chainId, uint16 newProtocolFee, address indexed caller);
@@ -105,12 +107,22 @@ contract UTSDeploymentRouter is IUTSDeploymentRouter, AccessControlUpgradeable, 
                 if (config.factory.length == 0) revert UTSDeploymentRouter__E1();
 
                 if (deployMetadata[i].isConnector) {
-                    abi.decode(deployMetadata[i].params, (DeployConnectorData));
-                } else {
-                    DeployTokenData memory params = abi.decode(deployMetadata[i].params, (DeployTokenData));
+                    DeployConnectorData memory _params = abi.decode(deployMetadata[i].params, (DeployConnectorData));
 
-                    if ((params.globalBurnable || params.onlyRoleBurnable || params.feeModule) && params.pureToken) {
-                        revert UTSDeploymentRouter__E4();
+                    if (_params.allowedChainIds.length != _params.chainConfigs.length) revert UTSDeploymentRouter__E3();
+                } else {
+                    DeployTokenData memory _params = abi.decode(deployMetadata[i].params, (DeployTokenData));
+
+                    if (_params.allowedChainIds.length != _params.chainConfigs.length) revert UTSDeploymentRouter__E3();
+
+                    if (_params.pureToken) {
+                        if (_params.mintable || _params.globalBurnable || _params.onlyRoleBurnable || _params.feeModule) {
+                            revert UTSDeploymentRouter__E4();
+                        }
+
+                        if (_params.mintedAmountToOwner > _params.initialSupply) revert UTSDeploymentRouter__E6();
+                    } else {
+                        if (_params.mintedAmountToOwner != _params.initialSupply) revert UTSDeploymentRouter__E6();
                     }
                 }
 
@@ -168,7 +180,7 @@ contract UTSDeploymentRouter is IUTSDeploymentRouter, AccessControlUpgradeable, 
         address dstFactoryAddress, 
         bytes1 messageType, 
         bytes calldata localParams
-    ) external payable returns(uint8) {
+    ) external payable returns(uint8 opResult) {
         if (msg.sender != MASTER_ROUTER) revert UTSDeploymentRouter__E2();
         if (paused()) return uint8(OperationResult.RouterPaused); 
 
@@ -181,6 +193,7 @@ contract UTSDeploymentRouter is IUTSDeploymentRouter, AccessControlUpgradeable, 
         ) = abi.decode(localParams, (bool, bytes, bytes));
 
         if (!IUTSRegistry(REGISTRY).validateFactory(dstFactoryAddress)) return uint8(OperationResult.UnauthorizedRouter);
+        if (IPausable(dstFactoryAddress).paused()) return uint8(OperationResult.RouterPaused);
 
         (bool _deployResult, bytes memory _deployResponse) = dstFactoryAddress.call(
             abi.encodeCall(IUTSFactory.deployByRouter, (_isConnector, _deployer, _deployParams))
@@ -191,6 +204,56 @@ contract UTSDeploymentRouter is IUTSDeploymentRouter, AccessControlUpgradeable, 
         } else {
             return uint8(OperationResult.DeployFailed);
         }
+    }
+
+    function pause() external onlyRole(PAUSER_ROLE) {
+        _pause();
+    }
+
+    function unpause() external onlyRole(PAUSER_ROLE) {
+        _unpause();
+    }
+
+    function setDstDeployConfig(
+        uint256[] calldata dstChainIds,
+        DstDeployConfig[] calldata newConfigs
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (dstChainIds.length != newConfigs.length) revert UTSDeploymentRouter__E3();
+        for (uint256 i; dstChainIds.length > i; ++i) {
+            _setFactory(dstChainIds[i], newConfigs[i].factory);
+            _setTokenDeployGas(dstChainIds[i], newConfigs[i].tokenDeployGas);
+            _setConnectorDeployGas(dstChainIds[i], newConfigs[i].connectorDeployGas);
+            _setProtocolFee(dstChainIds[i], newConfigs[i].protocolFee);
+        }
+    }
+
+    function setDstDeployGas(
+        uint256[] calldata dstChainIds,
+        uint64[] calldata newTokenDeployGas,
+        uint64[] calldata newConnectorDeployGas
+    ) external onlyRole(MANAGER_ROLE) {
+        if (dstChainIds.length != newTokenDeployGas.length) revert UTSDeploymentRouter__E3();
+        if (dstChainIds.length != newConnectorDeployGas.length) revert UTSDeploymentRouter__E3();
+        for (uint256 i; dstChainIds.length > i; ++i) {
+            _setTokenDeployGas(dstChainIds[i], newTokenDeployGas[i]);
+            _setConnectorDeployGas(dstChainIds[i], newConnectorDeployGas[i]);
+        }
+    }
+
+    function setDstProtocolFee(
+        uint256[] calldata dstChainIds, 
+        uint16[] calldata newProtocolFees
+    ) external onlyRole(MANAGER_ROLE) {
+        if (dstChainIds.length != newProtocolFees.length) revert UTSDeploymentRouter__E3();
+        for (uint256 i; dstChainIds.length > i; ++i) _setProtocolFee(dstChainIds[i], newProtocolFees[i]);
+    }
+
+    function setDstFactory(
+        uint256[] calldata dstChainIds, 
+        bytes[] calldata newFactory
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (dstChainIds.length != newFactory.length) revert UTSDeploymentRouter__E3();
+        for (uint256 i; dstChainIds.length > i; ++i) _setFactory(dstChainIds[i], newFactory[i]);
     }
 
     function estimateDeployTotal(
@@ -319,56 +382,6 @@ contract UTSDeploymentRouter is IUTSDeploymentRouter, AccessControlUpgradeable, 
 
     function getDeployConnectorParams(DeployConnectorData calldata deployData) external pure returns(bytes memory) {
         return abi.encode(deployData);
-    }
-
-    function pause() external onlyRole(PAUSER_ROLE) {
-        _pause();
-    }
-
-    function unpause() external onlyRole(PAUSER_ROLE) {
-        _unpause();
-    }
-
-    function setDstDeployConfig(
-        uint256[] calldata dstChainIds,
-        DstDeployConfig[] calldata newConfigs
-    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        if (dstChainIds.length != newConfigs.length) revert UTSDeploymentRouter__E3();
-        for (uint256 i; dstChainIds.length > i; ++i) {
-            _setFactory(dstChainIds[i], newConfigs[i].factory);
-            _setTokenDeployGas(dstChainIds[i], newConfigs[i].tokenDeployGas);
-            _setConnectorDeployGas(dstChainIds[i], newConfigs[i].connectorDeployGas);
-            _setProtocolFee(dstChainIds[i], newConfigs[i].protocolFee);
-        }
-    }
-
-    function setDstDeployGas(
-        uint256[] calldata dstChainIds,
-        uint64[] calldata newTokenDeployGas,
-        uint64[] calldata newConnectorDeployGas
-    ) external onlyRole(MANAGER_ROLE) {
-        if (dstChainIds.length != newTokenDeployGas.length) revert UTSDeploymentRouter__E3();
-        if (dstChainIds.length != newConnectorDeployGas.length) revert UTSDeploymentRouter__E3();
-        for (uint256 i; dstChainIds.length > i; ++i) {
-            _setTokenDeployGas(dstChainIds[i], newTokenDeployGas[i]);
-            _setConnectorDeployGas(dstChainIds[i], newConnectorDeployGas[i]);
-        }
-    }
-
-    function setDstProtocolFee(
-        uint256[] calldata dstChainIds, 
-        uint16[] calldata newProtocolFees
-    ) external onlyRole(MANAGER_ROLE) {
-        if (dstChainIds.length != newProtocolFees.length) revert UTSDeploymentRouter__E3();
-        for (uint256 i; dstChainIds.length > i; ++i) _setProtocolFee(dstChainIds[i], newProtocolFees[i]);
-    }
-
-    function setDstFactory(
-        uint256[] calldata dstChainIds, 
-        bytes[] calldata newFactory
-    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        if (dstChainIds.length != newFactory.length) revert UTSDeploymentRouter__E3();
-        for (uint256 i; dstChainIds.length > i; ++i) _setFactory(dstChainIds[i], newFactory[i]);
     }
 
     function protocolVersion() public pure returns(bytes2) {

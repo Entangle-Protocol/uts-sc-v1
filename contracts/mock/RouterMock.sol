@@ -28,7 +28,8 @@ contract RouterMock {
         uint8 decimals,
         uint256 chainId,
         uint32 gasLimit,
-        bytes calldata payload
+        bytes calldata customPayload,
+        bytes calldata protocolPayload
     ) external payable returns(bool success, uint256) {
         success = IUTSRouter(target).bridge{value: msg.value}(
             dstToken,
@@ -38,7 +39,8 @@ contract RouterMock {
             decimals,
             chainId,
             gasLimit,
-            payload
+            customPayload,
+            protocolPayload
         );
 
         return (success, amount);

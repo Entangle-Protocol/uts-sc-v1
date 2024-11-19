@@ -11,12 +11,12 @@ interface IUTSFactory {
 
     function router() external view returns(address);
 
-    function codeStorage(uint256 blueprintId) external view returns(address);
+    function codeStorage(uint8 blueprintId) external view returns(address);
 
     function protocolVersion() external pure returns(bytes2);
 
     function getPrecomputedAddress(
-        uint256 blueprintId,
+        uint8 blueprintId,
         bytes calldata deployer, 
         bytes32 salt, 
         bool isConnector
@@ -38,6 +38,6 @@ interface IUTSFactory {
 
     function setRouter(address newRouter) external;
 
-    function setCodeStorage(uint256 blueprintId, address newCodeStorage) external;
+    function setCodeStorage(uint8[] calldata blueprintIds, address[] calldata newCodeStorage) external;
     
 }

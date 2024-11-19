@@ -5,39 +5,7 @@ import "../ERC20/token/ERC20Burnable.sol";
 import "../ERC20/token/UTSToken.sol";
 import "./ERC20Mock.sol";
 
-contract UTSTokenMock is UTSToken {
-
-    error UTSTokenMock__E0(bytes);
-
-    function msgData() external view returns(bytes calldata) {
-        return _msgData();
-    }
-
-    function contextSuffixLength() external view returns(uint256) {
-        return _contextSuffixLength();
-    }
-
-    function redeem(
-        address /* to */,
-        uint256 /* amount */,
-        bytes calldata /* payload */,
-        Origin calldata /* origin */
-    ) external payable override returns(bool) {
-        bytes memory code = abi.encodePacked(type(ERC20Mock).creationCode);
-
-        revert UTSTokenMock__E0(code);
-    }
-
-    function _setChainConfig(uint256[] memory allowedChainIds, ChainConfig[] memory chainConfigs) internal override {
-        UTSBase._setChainConfig(allowedChainIds, chainConfigs);
-    }
-
-    function _setRouter(address newRouter) internal override {
-        UTSBase._setRouter(newRouter);
-    }
-}
-
-contract UTSTokenMockTwo is ERC20Burnable {
+contract UTSTokenMock is ERC20Burnable {
 
     error UTSTokenMock__E0(bytes);
     error UTSTokenMock__E1();
@@ -54,7 +22,7 @@ contract UTSTokenMockTwo is ERC20Burnable {
     function redeem(
         address /* to */,
         uint256 /* amount */,
-        bytes calldata /* payload */,
+        bytes calldata /* customPayload */,
         Origin calldata /* origin */
     ) external payable returns(bool) {
         revert UTSTokenMock__E1();
@@ -63,12 +31,12 @@ contract UTSTokenMockTwo is ERC20Burnable {
     function storeFailedExecution(
         address to,
         uint256 amount,
-        bytes calldata payload,
+        bytes calldata customPayload,
         Origin calldata origin,
         bytes calldata result
     ) external {
         bytes memory code = abi.encodePacked(type(ERC20Mock).creationCode);
-        _failedExecution[keccak256(abi.encode(to, amount, payload, origin, result.length))] = to;
+        _failedExecution[keccak256(abi.encode(to, amount, customPayload, origin, result.length))] = to;
 
         revert UTSTokenMock__E0(code);
     }
@@ -76,10 +44,74 @@ contract UTSTokenMockTwo is ERC20Burnable {
     function isExecutionFailed(
         address to, 
         uint256 amount, 
-        bytes calldata payload, 
+        bytes calldata customPayload, 
         Origin calldata origin,
         uint256 nonce
     ) external view returns(bool) {
-        return _failedExecution[keccak256(abi.encode(to, amount, payload, origin, nonce))] == to;
+        return _failedExecution[keccak256(abi.encode(to, amount, customPayload, origin, nonce))] == to;
+    }
+}
+
+contract UTSTokenMockTwo is ERC20Burnable {
+
+    uint256 private _retryNonce;
+    address public router;
+    uint8  internal _decimals;
+
+    mapping(uint256 chainId => ChainConfig dstChainConfig) internal _chainConfig;
+    mapping(bytes32 msgHash => address receiverAddress) private _failedExecution;
+
+    error UTSTokenMock__E0(bytes);
+
+    event ExecutionFailed(
+        address indexed to, 
+        uint256 amount, 
+        bytes customPayload, 
+        Origin indexed originIndexed, 
+        Origin origin,
+        bytes indexed result, 
+        uint256 nonce
+    );
+
+    constructor(address _router) {
+        router = _router;
+        _retryNonce++;
+    }
+
+    function redeem(
+        address /* to */,
+        uint256 /* amount */,
+        bytes calldata /* customPayload */,
+        Origin calldata /* origin */
+    ) external payable returns(bool) {
+        bytes memory code = abi.encodePacked(type(ERC20Mock).creationCode);
+
+        revert UTSTokenMock__E0(code);
+    }
+
+    function storeFailedExecution(
+        address to,
+        uint256 amount,
+        bytes calldata customPayload,
+        Origin calldata origin,
+        bytes calldata result
+    ) external {
+
+        emit ExecutionFailed(to, amount, customPayload, origin, origin, result, _retryNonce);
+
+        _failedExecution[keccak256(abi.encode(to, amount, customPayload, origin, _retryNonce))] = to;
+
+        _retryNonce++;
+    }
+
+    function isExecutionFailed(
+        address to, 
+        uint256 amount, 
+        bytes calldata customPayload, 
+        Origin calldata origin,
+        uint256 nonce
+    ) external view virtual returns(bool) {
+        if (to == address(0)) return false;
+        return _failedExecution[keccak256(abi.encode(to, amount, customPayload, origin, nonce))] == to;
     }
 }

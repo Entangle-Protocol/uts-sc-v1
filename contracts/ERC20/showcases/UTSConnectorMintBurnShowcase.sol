@@ -9,7 +9,7 @@ import "../UTSBase.sol";
 
 interface IERC20Extended {
     
-    function mintTo(address to, uint256 amount) external;
+    function mint(address to, uint256 amount) external;
 
     function burnFrom(address from, uint256 amount) external;
 
@@ -17,30 +17,20 @@ interface IERC20Extended {
 
 contract UTSConnectorMintBurnShowcase is UTSBase, Ownable, Pausable {
 
-    IERC20Extended private immutable _underlyingToken;
-
     constructor(
         address underlyingToken_,
         address _router,  
         uint256[] memory _allowedChainIds,
         ChainConfig[] memory _chainConfigs
     ) Ownable(msg.sender) {
-        __UTSBase_init(
-            IERC20Metadata(underlyingToken_).decimals(),
-            _router,  
-            _allowedChainIds,
-            _chainConfigs
-        );
+        __UTSBase_init(underlyingToken_, IERC20Metadata(underlyingToken_).decimals());
 
-        _underlyingToken = IERC20Extended(underlyingToken_);
+        _setRouter(_router);
+        _setChainConfig(_allowedChainIds, _chainConfigs);
     }
 
     function underlyingDecimals() external view returns(uint8) {
         return _decimals;
-    }
-
-    function underlyingToken() public view override returns(address) {
-        return address(_underlyingToken);
     }
 
     function pause() external onlyOwner() {
@@ -57,9 +47,9 @@ contract UTSConnectorMintBurnShowcase is UTSBase, Ownable, Pausable {
         bytes memory /* to */, 
         uint256 amount, 
         uint256 /* dstChainId */, 
-        bytes memory /* payload */
+        bytes memory /* customPayload */
     ) internal override whenNotPaused() returns(uint256) {
-        _underlyingToken.burnFrom(spender, amount);
+        IERC20Extended(_underlyingToken).burnFrom(spender, amount);
 
         return amount;
     }
@@ -67,10 +57,10 @@ contract UTSConnectorMintBurnShowcase is UTSBase, Ownable, Pausable {
     function _mintTo(
         address to,
         uint256 amount,
-        bytes memory /* payload */,
+        bytes memory /* customPayload */,
         Origin memory /* origin */
     ) internal override whenNotPaused() returns(uint256) {
-        _underlyingToken.mintTo(to, amount);
+        IERC20Extended(_underlyingToken).mint(to, amount);
 
         return amount;
     }

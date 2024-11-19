@@ -40,24 +40,6 @@ contract UTSPriceFeed is IUTSPriceFeed, AccessControlUpgradeable, PausableUpgrad
         __Pausable_init();
 
         _grantRole(DEFAULT_ADMIN_ROLE, defaultAdmin);
-
-        // TODO: chainIds
-        _setChainInfo(1,      4722366482869645213696);
-        _setChainInfo(10,     4740813226943354765312);
-        _setChainInfo(56,     4759259971017064316928);
-        _setChainInfo(100,    4777706715090773868544);
-        _setChainInfo(137,    9444732965739290427392);
-        _setChainInfo(5000,   9463179709812999979008);
-        _setChainInfo(8453,   9481626453886709530624);
-        _setChainInfo(42161,  9500073197960419082240);
-        _setChainInfo(43114,  14167099448608935641088);
-        _setChainInfo(59144,  14185546192682645192704);
-        _setChainInfo(81457,  14203992936756354744320);
-        _setChainInfo(534352, 14222439680830064295936);
-        _setChainInfo(33033,  18889465931478580854784);
-        _setChainInfo(559999, 18907912675552290406400);
-        _setChainInfo(569999, 18926359419625999958016);
-        _setChainInfo(570001, 18944806163699709509632);
     }
 
     function setPrices(
@@ -76,8 +58,12 @@ contract UTSPriceFeed is IUTSPriceFeed, AccessControlUpgradeable, PausableUpgrad
         for (uint256 i; chainIds.length > i; ++i) _setDstPricePerByteInWei(chainIds[i], dstPricePerByteInWei[i]);
     }
 
-    function setChainInfo(uint256 chainId, uint256 packedChainInfo) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        _setChainInfo(chainId, packedChainInfo);
+    function setChainInfo(
+        uint256[] calldata chainIds, 
+        uint256[] calldata packedChainInfo
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (chainIds.length != packedChainInfo.length) revert UTSPriceFeed__E0();
+        for (uint256 i; chainIds.length > i; ++i) _setChainInfo(chainIds[i], packedChainInfo[i]);
     }
 
     function pause() external onlyRole(PAUSER_ROLE) {

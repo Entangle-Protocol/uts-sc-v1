@@ -7,7 +7,7 @@ interface IUTSPriceFeed {
 
     function setDstPricePerByteInWei(uint256[] calldata chainIds, uint64[] calldata dstPricePerByteInWei) external;
 
-    function setChainInfo(uint256 chainId, uint256 packedChainInfo) external;
+    function setChainInfo(uint256[] calldata chainIds, uint256[] calldata packedChainInfo) external;
 
     function pause() external;
 

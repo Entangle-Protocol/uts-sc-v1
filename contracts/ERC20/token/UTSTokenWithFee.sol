@@ -13,11 +13,12 @@ contract UTSTokenWithFee is UTSToken, UTSFeeModule {
         uint256 dstChainId,
         uint64 gasLimit,
         uint16 expectedFeeRate,
-        bytes calldata payload
+        bytes calldata customPayload,
+        bytes calldata protocolPayload
     ) external payable returns(bool, uint256) {
         if (expectedFeeRate != bridgeFeeRate[dstChainId]) revert UTSFeeModule__E1();
 
-        return _bridge(msg.sender, from, to, amount, dstChainId, gasLimit, payload);
+        return _bridge(msg.sender, from, to, amount, dstChainId, gasLimit, customPayload, protocolPayload);
     }
 
     function _burnFrom(
@@ -26,7 +27,7 @@ contract UTSTokenWithFee is UTSToken, UTSFeeModule {
         bytes memory /* to */, 
         uint256 amount, 
         uint256 dstChainId, 
-        bytes memory /* payload */
+        bytes memory /* customPayload */
     ) internal virtual override returns(uint256) {
         if (from != spender) _spendAllowance(from, spender, amount);
 

@@ -144,10 +144,6 @@ contract UTSMasterRouter is IUTSMasterRouter, AccessControlUpgradeable, Pausable
         emit ProposalExecuted(uint8(_opResult), _dstPeerAddress, _router, _params, _srcChainId, _srcOpTxId);
     }
 
-    function validateRouter(address target) external view returns(bool) {
-        return hasRole(ROUTER_ROLE, target);
-    }
-
     function setFeeCollector(address newFeeCollector) external onlyRole(DEFAULT_ADMIN_ROLE) {
         _setFeeCollector(newFeeCollector);
     }
@@ -166,6 +162,10 @@ contract UTSMasterRouter is IUTSMasterRouter, AccessControlUpgradeable, Pausable
 
     function unpause() external onlyRole(PAUSER_ROLE) {
         _unpause();
+    }
+
+    function validateRouter(address target) external view returns(bool) {
+        return hasRole(ROUTER_ROLE, target);
     }
 
     function _authorizeUpgrade(address /* newImplementation */) internal override onlyRole(DEFAULT_ADMIN_ROLE) {

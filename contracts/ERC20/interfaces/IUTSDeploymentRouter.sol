@@ -77,7 +77,7 @@ interface IUTSDeploymentRouter {
         address dstFactoryAddress, 
         bytes1 messageType, 
         bytes calldata localParams
-    ) external payable returns(uint8);
+    ) external payable returns(uint8 opResult);
 
     function pause() external;
 

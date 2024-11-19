@@ -45,7 +45,7 @@ abstract contract UTSBaseExtended is IUTSBaseExtended, UTSBase {
         uint256[] calldata dstChainIds, 
         uint256[] calldata configsLength
     ) external view returns(uint256 paymentAmount) {
-        return IUTSRouter(router()).getUpdateFee(dstChainIds,configsLength);
+        return IUTSRouter(router()).getUpdateFee(dstChainIds, configsLength);
     }
 
 }

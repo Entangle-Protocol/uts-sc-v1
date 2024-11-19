@@ -89,20 +89,21 @@ contract UTSRouter is IUTSRouter, AccessControlUpgradeable, PausableUpgradeable,
         uint256 amount,
         uint8 srcDecimals,
         uint256 dstChainId,
-        uint64 gasLimit,
-        bytes calldata payload
+        uint64 dstGasLimit,
+        bytes calldata customPayload,
+        bytes calldata protocolPayload
     ) external payable whenNotPaused() returns(bool success) {
         if (IUTSBase(msg.sender).protocolVersion() != protocolVersion()) revert UTSRouter__E2();
-        if (dstMinGasLimit(dstChainId) > gasLimit) revert UTSRouter__E6();
+        if (dstMinGasLimit(dstChainId) > dstGasLimit) revert UTSRouter__E6();
         if (dstChainId == block.chainid) revert UTSRouter__E1();
-        if (BYTES32_LENGTH >= to.length) if (bytes32(to) == bytes32(0)) revert UTSRouter__E4();
-        if (BYTES32_LENGTH >= dstToken.length) if (bytes32(dstToken) == bytes32(0)) revert UTSRouter__E5();
-        if (getBridgeFee(dstChainId, gasLimit, payload.length) > msg.value) revert UTSRouter__E0();
+        if (_isZeroAddress(to)) revert UTSRouter__E4();
+        if (_isZeroAddress(dstToken)) revert UTSRouter__E5();
+        if (getBridgeFee(dstChainId, dstGasLimit, customPayload.length, protocolPayload) > msg.value) revert UTSRouter__E0();
 
         _paymentTransfer();
 
         IUTSMasterRouter(MASTER_ROUTER).sendProposal(
-            payload.length, 
+            customPayload.length, 
             dstChainId, 
             abi.encode(
                 dstToken,
@@ -114,8 +115,8 @@ contract UTSRouter is IUTSRouter, AccessControlUpgradeable, PausableUpgradeable,
                     block.chainid, 
                     msg.sender.toBytes(),
                     srcDecimals,
-                    gasLimit,
-                    payload
+                    dstGasLimit,
+                    customPayload
                 )
             )
         );
@@ -138,7 +139,7 @@ contract UTSRouter is IUTSRouter, AccessControlUpgradeable, PausableUpgradeable,
 
         for (uint256 i; dstChainIds.length > i; ++i) {
             if (dstChainIds[i] == block.chainid) revert UTSRouter__E1();
-            if (BYTES32_LENGTH >= dstPeers[i].length) if (bytes32(dstPeers[i]) == bytes32(0)) revert UTSRouter__E5();
+            if (_isZeroAddress(dstPeers[i])) revert UTSRouter__E5();
 
             _paymentAmount += _getUpdateFee(dstChainIds[i], newConfigs[i].allowedChainIds.length);
 
@@ -165,7 +166,11 @@ contract UTSRouter is IUTSRouter, AccessControlUpgradeable, PausableUpgradeable,
         return true;
     }
 
-    function execute(address dstToken, bytes1 messageType, bytes calldata localParams) external payable returns(uint8) {
+    function execute(
+        address dstToken, 
+        bytes1 messageType, 
+        bytes calldata localParams
+    ) external payable returns(uint8 opResult) {
         if (msg.sender != MASTER_ROUTER) revert UTSRouter__E3();
         if (paused()) return uint8(OperationResult.RouterPaused);
 
@@ -176,7 +181,7 @@ contract UTSRouter is IUTSRouter, AccessControlUpgradeable, PausableUpgradeable,
         return uint8(OperationResult.InvalidMessageType);
     }
 
-    function _executeRedeem(address dstToken, bytes calldata localParams) internal returns(uint8) {
+    function _executeRedeem(address dstToken, bytes calldata localParams) internal returns(uint8 opResult) {
         (
             bytes memory _srcSender,
             bytes memory _to, 
@@ -185,7 +190,7 @@ contract UTSRouter is IUTSRouter, AccessControlUpgradeable, PausableUpgradeable,
             bytes memory _srcToken, 
             uint8 _srcDecimals,
             uint64 _gasLimit, 
-            bytes memory _payload
+            bytes memory _customPayload
         ) = abi.decode(localParams, (bytes, bytes, uint256, uint256, bytes, uint8, uint64, bytes));
 
         if (_srcChainId == block.chainid) return uint8(OperationResult.InvalidSrcChainId);
@@ -213,7 +218,7 @@ contract UTSRouter is IUTSRouter, AccessControlUpgradeable, PausableUpgradeable,
             _gasLimit,
             0,   // call {value}
             150, // max {_redeemResponse} bytes length to copy
-            abi.encodeCall(IUTSBase.redeem, (_receiver, _amount, _payload, _origin))
+            abi.encodeCall(IUTSBase.redeem, (_receiver, _amount, _customPayload, _origin))
         );
 
         if (_redeemResult) {
@@ -223,7 +228,10 @@ contract UTSRouter is IUTSRouter, AccessControlUpgradeable, PausableUpgradeable,
                 STORE_GAS_LIMIT,
                 0, // call {value}
                 0, // max {_storeResponse} bytes length to copy
-                abi.encodeCall(IUTSBase.storeFailedExecution, (_receiver, _amount, _payload, _origin, _redeemResponse))
+                abi.encodeCall(
+                    IUTSBase.storeFailedExecution, 
+                    (_receiver, _amount, _customPayload, _origin, _redeemResponse)
+                )
             );
 
             if (_storeResult) {
@@ -234,7 +242,7 @@ contract UTSRouter is IUTSRouter, AccessControlUpgradeable, PausableUpgradeable,
         }
     }
 
-    function _executeUpdateConfigs(address dstToken, bytes calldata localParams) internal returns(uint8) {
+    function _executeUpdateConfigs(address dstToken, bytes calldata localParams) internal returns(uint8 opResult) {
         (
             bytes memory _srcSender, 
             uint256 _srcChainId, 
@@ -305,12 +313,18 @@ contract UTSRouter is IUTSRouter, AccessControlUpgradeable, PausableUpgradeable,
         return 0x0101;
     }
 
-    function getBridgeFee(uint256 dstChainId, uint64 gasLimit, uint256 payloadLength) public view returns(uint256) {
+    function getBridgeFee(
+        uint256 dstChainId, 
+        uint64 dstGasLimit, 
+        uint256 payloadLength,
+        bytes calldata /* protocolPayload */
+    ) public view returns(uint256) {
         (uint256 _dstGasPrice, uint256 _dstPricePerByte) = IUTSPriceFeed(PRICE_FEED).getPrices(dstChainId);
-        return (gasLimit * _dstGasPrice + payloadLength * _dstPricePerByte) * (BPS + dstProtocolFee(dstChainId)) / BPS;
+        return (dstGasLimit * _dstGasPrice + payloadLength * _dstPricePerByte) * (BPS + dstProtocolFee(dstChainId)) / BPS;
     }
 
     function getUpdateFee(uint256[] calldata dstChainIds, uint256[] calldata configsLength) external view returns(uint256 amount) {
+        if (dstChainIds.length != configsLength.length) revert UTSRouter__E7();
         for (uint256 i; dstChainIds.length > i; ++i) amount += _getUpdateFee(dstChainIds[i], configsLength[i]);
     }
 
@@ -332,6 +346,10 @@ contract UTSRouter is IUTSRouter, AccessControlUpgradeable, PausableUpgradeable,
     function _getUpdateFee(uint256 dstChainId, uint256 configsLength) internal view returns(uint256) {
         (uint256 _dstGasPrice, ) = IUTSPriceFeed(PRICE_FEED).getPrices(dstChainId);
         return ((configsLength + 4) * dstUpdateGas(dstChainId) * _dstGasPrice) * (BPS + dstProtocolFee(dstChainId)) / BPS;
+    }
+
+    function _isZeroAddress(bytes calldata bytesAddress) internal pure returns(bool zeroAddress) {
+        if (BYTES32_LENGTH >= bytesAddress.length) if (bytes32(bytesAddress) == bytes32(0)) return true;
     }
 
     function dstMinGasLimit(uint256 dstChainId) public view returns(uint64) {

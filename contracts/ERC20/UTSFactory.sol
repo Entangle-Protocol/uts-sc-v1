@@ -38,7 +38,7 @@ contract UTSFactory is IUTSFactory, AccessControlUpgradeable, PausableUpgradeabl
     /// @custom:storage-location erc7201:UTSProtocol.storage.UTSFactory.Main
     struct Main {
         address _router;
-        mapping(uint256 blueprintId => address codeStorageAddress) _codeStorage;
+        mapping(uint8 blueprintId => address codeStorageAddress) _codeStorage;
     }
 
     /// @dev keccak256(abi.encode(uint256(keccak256("UTSProtocol.storage.UTSFactory.Main")) - 1)) & ~bytes32(uint256(0xff))
@@ -47,9 +47,11 @@ contract UTSFactory is IUTSFactory, AccessControlUpgradeable, PausableUpgradeabl
     error UTSFactory__E0();     // access denied: only router allowed 
     error UTSFactory__E1();     // {deployment} address engaged
     error UTSFactory__E2();     // unsupported configuration
+    error UTSFactory__E3();     // arguments length mismatch
+    error UTSFactory__E4();     // invalid {mintedAmountToOwner}
 
     event DeploymentRouterSet(address newRouter, address indexed caller);
-    event CodeStorageSet(uint256 indexed blueprintId, address newCodeStorage, address indexed caller);
+    event CodeStorageSet(uint8 indexed blueprintId, address newCodeStorage, address indexed caller);
     event Deployed(
         address deployment, 
         bytes indexed deployerIndexed, 
@@ -114,8 +116,12 @@ contract UTSFactory is IUTSFactory, AccessControlUpgradeable, PausableUpgradeabl
         _setRouter(newRouter);
     } 
 
-    function setCodeStorage(uint256 blueprintId, address newCodeStorage) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        _setCodeStorage(blueprintId, newCodeStorage);
+    function setCodeStorage(
+        uint8[] calldata blueprintIds, 
+        address[] calldata newCodeStorage
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (blueprintIds.length != newCodeStorage.length) revert UTSFactory__E3();
+        for (uint256 i; blueprintIds.length > i; ++i) _setCodeStorage(blueprintIds[i], newCodeStorage[i]);
     }
 
     function protocolVersion() public pure returns(bytes2) {
@@ -123,7 +129,7 @@ contract UTSFactory is IUTSFactory, AccessControlUpgradeable, PausableUpgradeabl
     }
 
     function getPrecomputedAddress(
-        uint256 blueprintId,
+        uint8 blueprintId,
         bytes calldata deployer, 
         bytes32 salt, 
         bool isConnector
@@ -143,10 +149,15 @@ contract UTSFactory is IUTSFactory, AccessControlUpgradeable, PausableUpgradeabl
         DeployTokenData memory deployData, 
         bytes memory deployer
     ) internal returns(bool success, address newToken) {
-        if (
-            (deployData.globalBurnable || deployData.onlyRoleBurnable || deployData.feeModule) && 
-            deployData.pureToken
-        ) revert UTSFactory__E2();
+        if (deployData.pureToken) {
+            if (deployData.mintable || deployData.globalBurnable || deployData.onlyRoleBurnable || deployData.feeModule) {
+                revert UTSFactory__E2();
+            }
+
+            if (deployData.mintedAmountToOwner > deployData.initialSupply) revert UTSFactory__E4();
+        } else {
+            if (deployData.mintedAmountToOwner != deployData.initialSupply) revert UTSFactory__E4();
+        }
 
         DeploymentType _blueprintId = DeploymentType.Standard;
 
@@ -156,7 +167,7 @@ contract UTSFactory is IUTSFactory, AccessControlUpgradeable, PausableUpgradeabl
         if (deployData.pureToken) _blueprintId = DeploymentType.PureToken;
 
         newToken = _deployAndRegister(
-            uint256(_blueprintId),
+            uint8(_blueprintId),
             deployer,
             keccak256(abi.encode(deployer, deployData.salt)), 
             address(0)
@@ -184,7 +195,7 @@ contract UTSFactory is IUTSFactory, AccessControlUpgradeable, PausableUpgradeabl
         bytes memory deployer
     ) internal returns(bool success, address newConnector) {
         newConnector = _deployAndRegister(
-            uint256(deployData.feeModule ? DeploymentType.ConnectorWithFee : DeploymentType.Standard), 
+            uint8(deployData.feeModule ? DeploymentType.ConnectorWithFee : DeploymentType.Standard), 
             deployer,
             keccak256(abi.encode(deployer, deployData.salt)),
             deployData.underlyingToken.toAddress()
@@ -214,7 +225,7 @@ contract UTSFactory is IUTSFactory, AccessControlUpgradeable, PausableUpgradeabl
     }
 
     function _deployAndRegister(
-        uint256 blueprintId,
+        uint8 blueprintId,
         bytes memory deployer, 
         bytes32 salt,  
         address underlyingToken
@@ -244,7 +255,7 @@ contract UTSFactory is IUTSFactory, AccessControlUpgradeable, PausableUpgradeabl
         return $._router;
     }
 
-    function codeStorage(uint256 blueprintId) public view returns(address) {
+    function codeStorage(uint8 blueprintId) public view returns(address) {
         Main storage $ = _getMainStorage();
         return $._codeStorage[blueprintId];
     }
@@ -256,7 +267,7 @@ contract UTSFactory is IUTSFactory, AccessControlUpgradeable, PausableUpgradeabl
         emit DeploymentRouterSet(newRouter, msg.sender);
     }
 
-    function _setCodeStorage(uint256 blueprintId, address newCodeStorage) internal {
+    function _setCodeStorage(uint8 blueprintId, address newCodeStorage) internal {
         Main storage $ = _getMainStorage();
         $._codeStorage[blueprintId] = newCodeStorage;
 

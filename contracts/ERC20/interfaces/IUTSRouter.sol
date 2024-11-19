@@ -11,7 +11,12 @@ interface IUTSRouter {
 
     function protocolVersion() external view returns(bytes2);
 
-    function getBridgeFee(uint256 dstChainId, uint64 gasLimit, uint256 payloadLength) external view returns(uint256);
+    function getBridgeFee(
+        uint256 dstChainId, 
+        uint64 dstGasLimit,
+        uint256 payloadLength,
+        bytes calldata protocolPayload
+    ) external view returns(uint256);
 
     function getUpdateFee(uint256[] calldata dstChainIds, uint256[] calldata configsLength) external view returns(uint256);
 
@@ -34,8 +39,9 @@ interface IUTSRouter {
         uint256 amount,
         uint8 srcDecimals,
         uint256 dstChainId,
-        uint64 gasLimit,
-        bytes calldata payload
+        uint64 dstGasLimit,
+        bytes calldata customPayload,
+        bytes calldata protocolPayload
     ) external payable returns(bool success);
 
     function requestToUpdateConfig(
@@ -45,7 +51,11 @@ interface IUTSRouter {
         ChainConfigUpdate[] calldata newConfigs
     ) external payable returns(bool success);
 
-    function execute(address dstToken, bytes1 messageType, bytes calldata localParams) external payable returns(uint8);
+    function execute(
+        address dstToken, 
+        bytes1 messageType, 
+        bytes calldata localParams
+    ) external payable returns(uint8 opResult);
 
     function pause() external;
 

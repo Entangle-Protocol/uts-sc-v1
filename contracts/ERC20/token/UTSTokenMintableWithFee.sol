@@ -12,7 +12,7 @@ contract UTSTokenMintableWithFee is UTSTokenMintable, UTSTokenWithFee {
         bytes memory to, 
         uint256 amount, 
         uint256 dstChainId, 
-        bytes memory payload
+        bytes memory customPayload
     ) internal override(UTSToken, UTSTokenWithFee) returns(uint256) {
         return super._burnFrom(
             spender,
@@ -20,7 +20,7 @@ contract UTSTokenMintableWithFee is UTSTokenMintable, UTSTokenWithFee {
             to, 
             amount, 
             dstChainId, 
-            payload
+            customPayload
         );
     }
 

@@ -26,6 +26,7 @@ pragma solidity 0.8.24;
         string    symbol;
         uint8     decimals;
         uint256   initialSupply;
+        uint256   mintedAmountToOwner;
         bool      pureToken;
         bool      mintable;
         bool      globalBurnable;

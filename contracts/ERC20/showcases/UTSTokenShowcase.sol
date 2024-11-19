@@ -13,18 +13,12 @@ contract UTSTokenShowcase is UTSBase, ERC20, Ownable {
         uint256[] memory _allowedChainIds,
         ChainConfig[] memory _chainConfigs
     ) Ownable(msg.sender) ERC20("UTS Token Showcase", "UTSTS") {
-        __UTSBase_init(
-            decimals(),
-            _router,  
-            _allowedChainIds,
-            _chainConfigs
-        );
+        __UTSBase_init(address(this), decimals());
+
+        _setRouter(_router);
+        _setChainConfig(_allowedChainIds, _chainConfigs);
 
         _mint(msg.sender, 1_000_000 * 10 ** decimals());
-    }
-
-    function underlyingToken() public view override returns(address) {
-        return address(this);
     }
 
     function _burnFrom(
@@ -33,7 +27,7 @@ contract UTSTokenShowcase is UTSBase, ERC20, Ownable {
         bytes memory /* to */, 
         uint256 amount, 
         uint256 /* dstChainId */, 
-        bytes memory /* payload */
+        bytes memory /* customPayload */
     ) internal override returns(uint256) {
         if (from != spender) _spendAllowance(from, spender, amount);
 
@@ -45,7 +39,7 @@ contract UTSTokenShowcase is UTSBase, ERC20, Ownable {
     function _mintTo(
         address to,
         uint256 amount,
-        bytes memory /* payload */,
+        bytes memory /* customPayload */,
         Origin memory /* origin */
     ) internal override returns(uint256) {
         _update(address(0), to, amount);

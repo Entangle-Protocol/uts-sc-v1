@@ -11,19 +11,14 @@ contract UTSTokenPure is UTSBaseIndexed, ERC20Modified, AccessControl {
 
     function initializeToken(DeployTokenData calldata params) external { 
         __ERC20_init(params.name, params.symbol);
-        __UTSBase_init(
-            params.decimals,
-            params.router.toAddress(),  
-            params.allowedChainIds,
-            params.chainConfigs
-        );
+        __UTSBase_init(address(this), params.decimals);
+
+        _setRouter(params.router.toAddress());
+        _setChainConfig(params.allowedChainIds, params.chainConfigs);
 
         if (params.initialSupply > 0) {
-            if (params.mintable) {
-                _update(address(0), params.owner.toAddress(), params.initialSupply);
-            } else {
-                _update(address(0), address(this), params.initialSupply);
-            }
+            _update(address(0), params.owner.toAddress(), params.mintedAmountToOwner);
+            _update(address(0), address(this), params.initialSupply - params.mintedAmountToOwner);
         }
 
         _grantRole(DEFAULT_ADMIN_ROLE, params.owner.toAddress());
@@ -31,10 +26,6 @@ contract UTSTokenPure is UTSBaseIndexed, ERC20Modified, AccessControl {
 
     function decimals() public view override returns(uint8) {
         return _decimals;
-    }
-
-    function underlyingToken() public view override returns(address) {
-        return address(this);
     }
 
     function supportsInterface(bytes4 interfaceId) public view override(UTSBase, AccessControl) returns(bool) {
@@ -47,7 +38,7 @@ contract UTSTokenPure is UTSBaseIndexed, ERC20Modified, AccessControl {
         bytes memory /* to */, 
         uint256 amount, 
         uint256 /* dstChainId */, 
-        bytes memory /* payload */
+        bytes memory /* customPayload */
     ) internal override returns(uint256) {
         if (from != spender) _spendAllowance(from, spender, amount);
 
@@ -59,7 +50,7 @@ contract UTSTokenPure is UTSBaseIndexed, ERC20Modified, AccessControl {
     function _mintTo(
         address to,
         uint256 amount,
-        bytes memory /* payload */,
+        bytes memory /* customPayload */,
         Origin memory /* origin */
     ) internal override returns(uint256) {
         if (to != address(this)) _transfer(address(this), to, amount);

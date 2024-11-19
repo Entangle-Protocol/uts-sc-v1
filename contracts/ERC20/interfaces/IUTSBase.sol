@@ -7,7 +7,7 @@ interface IUTSBase {
 
     function protocolVersion() external view returns(bytes2);
 
-    function underlyingToken() external view returns(address);
+    function underlyingToken() external view returns(address underlyingTokenAddress);
 
     function router() external view returns(address routerAddress);
 
@@ -16,15 +16,16 @@ interface IUTSBase {
     function isExecutionFailed(
         address to,
         uint256 amount,
-        bytes calldata payload,
+        bytes calldata customPayload,
         Origin calldata origin,
         uint256 nonce
     ) external view returns(bool);
 
     function estimateBridgeFee(
         uint256 dstChainId, 
-        uint64 gasLimit, 
-        uint16 payloadLength
+        uint64 dstGasLimit, 
+        uint16 customPayloadLength,
+        bytes calldata protocolPayload
     ) external view returns(uint256 paymentAmount, uint64 dstMinGasLimit);
 
     function setRouter(address newRouter) external returns(bool);
@@ -39,21 +40,22 @@ interface IUTSBase {
         bytes calldata to,
         uint256 amount,
         uint256 dstChainId,
-        uint64 gasLimit,
-        bytes calldata payload
-    ) external payable returns(bool, uint256);
+        uint64 dstGasLimit,
+        bytes calldata customPayload,
+        bytes calldata protocolPayload
+    ) external payable returns(bool success, uint256 bridgedAmount);
 
     function redeem(
         address to,
         uint256 amount,
-        bytes calldata payload,
+        bytes calldata customPayload,
         Origin calldata origin
     ) external payable returns(bool);
 
     function storeFailedExecution(
         address to,
         uint256 amount,
-        bytes calldata payload,
+        bytes calldata customPayload,
         Origin calldata origin,
         bytes calldata result
     ) external;
@@ -61,7 +63,7 @@ interface IUTSBase {
     function retryRedeem(
         address to, 
         uint256 amount, 
-        bytes calldata payload, 
+        bytes calldata customPayload, 
         Origin calldata origin,
         uint256 nonce
     ) external returns(bool);

@@ -21,12 +21,10 @@ contract UTSToken is IUTSToken, UTSBaseIndexed, ERC20Burnable, AccessControl {
 
     function initializeToken(DeployTokenData calldata params) external { 
         __ERC20_init(params.name, params.symbol);
-        __UTSBase_init(
-            params.decimals,
-            params.router.toAddress(),  
-            params.allowedChainIds,
-            params.chainConfigs
-        );
+        __UTSBase_init(address(this), params.decimals);
+
+        _setRouter(params.router.toAddress());
+        _setChainConfig(params.allowedChainIds, params.chainConfigs);
 
         if (params.initialSupply > 0) super._update(address(0), params.owner.toAddress(), params.initialSupply);
 
@@ -40,10 +38,6 @@ contract UTSToken is IUTSToken, UTSBaseIndexed, ERC20Burnable, AccessControl {
         return _decimals;
     }
 
-    function underlyingToken() public view override returns(address) {
-        return address(this);
-    }
-
     function supportsInterface(bytes4 interfaceId) public view override(UTSBase, AccessControl) returns(bool) {
         return interfaceId == type(IUTSToken).interfaceId || interfaceId == type(IERC20).interfaceId || super.supportsInterface(interfaceId);
     }
@@ -54,7 +48,7 @@ contract UTSToken is IUTSToken, UTSBaseIndexed, ERC20Burnable, AccessControl {
         bytes memory /* to */, 
         uint256 amount, 
         uint256 /* dstChainId */, 
-        bytes memory /* payload */
+        bytes memory /* customPayload */
     ) internal virtual override returns(uint256) {
         if (from != spender) _spendAllowance(from, spender, amount);
 
@@ -66,7 +60,7 @@ contract UTSToken is IUTSToken, UTSBaseIndexed, ERC20Burnable, AccessControl {
     function _mintTo(
         address to,
         uint256 amount,
-        bytes memory /* payload */,
+        bytes memory /* customPayload */,
         Origin memory /* origin */
     ) internal virtual override returns(uint256) {
         super._update(address(0), to, amount);

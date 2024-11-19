@@ -14,7 +14,6 @@ import "./interfaces/IUTSRouter.sol";
 /**
  * @dev
  * The {__UTSBase_init} function must be called before using other functions of the {UTSBase} contract.
- * The {underlyingToken} function must be overridden to return actual underlying ERC20 token address.
  * The {_authorizeCall} function must be overridden to include access restriction to the {setRouter} and {setChainConfig} functions.
  * The {_mintTo} function must be overridden to implement {mint}/{transfer} underlying tokens to receiver {to} address by {_router}.
  * The {_burnFrom} function must be overridden to implement {burn}/{transferFrom} underlying tokens from {spender}/{from} address for bridging.
@@ -24,9 +23,11 @@ abstract contract UTSBase is IUTSBase, ERC165 {
     using DecimalsConverter for uint256;
     using BytesLib for bytes;
 
-    uint256 private _retryNonce;
-    address private _router;
-    uint8  internal _decimals;
+    uint256 private  _retryNonce;
+    address private  _router;
+
+    address internal _underlyingToken;
+    uint8   internal _decimals;
 
     mapping(uint256 chainId => ChainConfig dstChainConfig) internal _chainConfig;
     mapping(bytes32 msgHash => address receiverAddress) private _failedExecution;
@@ -62,7 +63,7 @@ abstract contract UTSBase is IUTSBase, ERC165 {
     event ExecutionFailed(
         address indexed to, 
         uint256 amount, 
-        bytes payload, 
+        bytes customPayload, 
         Origin indexed originIndexed, 
         Origin origin,
         bytes indexed result, 
@@ -71,26 +72,18 @@ abstract contract UTSBase is IUTSBase, ERC165 {
 
     /**
      * @notice Initializes basic settings
+     * @param underlyingToken_ underlying ERC20 token address
      * @param decimals_ underlying token decimals
-     * @param router_ UTSRouter address
-     * @param allowedChainIds chains Ids available for bridging
-     * @param chainConfigs chains Ids settings
-     * @notice Called only once
-     */ 
-    function __UTSBase_init(
-        uint8 decimals_,
-        address router_,  
-        uint256[] memory allowedChainIds,
-        ChainConfig[] memory chainConfigs
-    ) internal {
+     * @notice Сan and should be called only once
+     */
+    function __UTSBase_init(address underlyingToken_, uint8 decimals_) internal {
         if (_retryNonce > 0) revert UTSBase__E0();
 
+        _underlyingToken = underlyingToken_;
         _decimals = decimals_;
-        _setRouter(router_);
-        _setChainConfig(allowedChainIds, chainConfigs);
         // {_retryNonce} counter increases here for two reasons: 
         // 1. to block repeated {__UTSBase_init} call
-        // 2. initialize a variable to unify the gas limit calculation of the {storeFailedExecution} call
+        // 2. initialize the {_retryNonce} variable to unify the gas limit calculation of the {storeFailedExecution} call
         _retryNonce = 1;
     }
 
@@ -100,28 +93,39 @@ abstract contract UTSBase is IUTSBase, ERC165 {
      * @param to destination tokens receiver
      * @param amount amount to bridge
      * @param dstChainId destination chain Id
-     * @param gasLimit {redeem} call gas limit
-     * @param payload additional data
-     * @return Call result
-     * @return Final bridged amount
+     * @param dstGasLimit {redeem} call gas limit
+     * @param customPayload user's additional data
+     * @param protocolPayload protocol's additional data
+     * @return success Call result
+     * @return bridgedAmount bridged amount
      */
     function bridge(
         address from,
         bytes calldata to, 
         uint256 amount, 
         uint256 dstChainId,
-        uint64 gasLimit,
-        bytes calldata payload
-    ) external payable virtual returns(bool, uint256) {
+        uint64 dstGasLimit,
+        bytes calldata customPayload,
+        bytes calldata protocolPayload
+    ) external payable virtual returns(bool success, uint256 bridgedAmount) {
 
-        return _bridge(msg.sender, from, to, amount, dstChainId, gasLimit, payload);
+        return _bridge(
+            msg.sender, 
+            from, 
+            to, 
+            amount, 
+            dstChainId, 
+            dstGasLimit, 
+            customPayload, 
+            protocolPayload
+        );
     }
 
     /**
      * @notice Executes the tokens delivery from the source chain
      * @param to tokens receiver
      * @param amount amount to receive
-     * @param payload additional data
+     * @param customPayload user's additional data
      * @param origin source chain settings
      * @return Call result
      * @notice Only the {_router} can execute this function
@@ -129,19 +133,19 @@ abstract contract UTSBase is IUTSBase, ERC165 {
     function redeem(
         address to,
         uint256 amount,
-        bytes calldata payload,
+        bytes calldata customPayload,
         Origin calldata origin
     ) external payable virtual returns(bool) {
         _onlyRouter();
 
-        return _redeem(to, amount, payload, origin);
+        return _redeem(to, amount, customPayload, origin);
     }
 
     /**
      * @notice Stores failed execution's data
      * @param to tokens receiver
      * @param amount amount to receive
-     * @param payload additional data
+     * @param customPayload user's additional data
      * @param origin source chain settings
      * @param result handled error message
      * @notice Only the {_router} can execute this function
@@ -149,15 +153,15 @@ abstract contract UTSBase is IUTSBase, ERC165 {
     function storeFailedExecution(
         address to,
         uint256 amount,
-        bytes calldata payload,
+        bytes calldata customPayload,
         Origin calldata origin,
         bytes calldata result
     ) external virtual {
         _onlyRouter();
 
-        _failedExecution[keccak256(abi.encode(to, amount, payload, origin, _retryNonce))] = to;
+        _failedExecution[keccak256(abi.encode(to, amount, customPayload, origin, _retryNonce))] = to;
 
-        emit ExecutionFailed(to, amount, payload, origin, origin, result, _retryNonce);
+        emit ExecutionFailed(to, amount, customPayload, origin, origin, result, _retryNonce);
 
         _retryNonce++;
     }
@@ -166,7 +170,7 @@ abstract contract UTSBase is IUTSBase, ERC165 {
      * @notice Executes the tokens delivery after failed execution
      * @param to tokens receiver
      * @param amount amount to receive
-     * @param payload additional data
+     * @param customPayload user's additional data
      * @param origin source chain settings
      * @param nonce unique failed execution's counter
      * @return Call result
@@ -174,16 +178,16 @@ abstract contract UTSBase is IUTSBase, ERC165 {
     function retryRedeem(
         address to,
         uint256 amount,
-        bytes calldata payload,
+        bytes calldata customPayload,
         Origin calldata origin,
         uint256 nonce
     ) external virtual returns(bool) {
         if (to == address(0)) return false;
-        bytes32 _hash = keccak256(abi.encode(to, amount, payload, origin, nonce));
+        bytes32 _hash = keccak256(abi.encode(to, amount, customPayload, origin, nonce));
         if (_failedExecution[_hash] != to) return false;
         delete _failedExecution[_hash];
 
-        return _redeem(to, amount, payload, origin);
+        return _redeem(to, amount, customPayload, origin);
     }
 
     /**
@@ -234,13 +238,15 @@ abstract contract UTSBase is IUTSBase, ERC165 {
      * @notice Returns the {underlyingToken} ERC20 address
      * @return Underlying ERC20 token address
      */
-    function underlyingToken() public view virtual returns(address);
+    function underlyingToken() public view virtual returns(address) {
+        return _underlyingToken;
+    }
 
     /**
      * @notice Returns whether failed execution's data is stored 
      * @param to tokens receiver
      * @param amount amount to receive
-     * @param payload additional data
+     * @param customPayload user's additional data
      * @param origin source chain settings
      * @param nonce unique failed execution's counter
      * @return Result
@@ -248,32 +254,34 @@ abstract contract UTSBase is IUTSBase, ERC165 {
     function isExecutionFailed(
         address to, 
         uint256 amount, 
-        bytes calldata payload, 
+        bytes calldata customPayload, 
         Origin calldata origin,
         uint256 nonce
     ) external view virtual returns(bool) {
         if (to == address(0)) return false;
-        return _failedExecution[keccak256(abi.encode(to, amount, payload, origin, nonce))] == to;
+        return _failedExecution[keccak256(abi.encode(to, amount, customPayload, origin, nonce))] == to;
     }
 
     /**
      * @notice Returns estimated minimal amount to pay for bridging and minimal gas limit
      * @param dstChainId destination chain Id
-     * @param gasLimit {redeem} call gas limit
-     * @param payloadLength additional data length
+     * @param dstGasLimit {redeem} call gas limit
+     * @param customPayloadLength user's additional data length
+     * @param protocolPayload protocol's additional data
      * @return paymentAmount source chain native coin amount to pay for bridging
      * @return dstMinGasLimit destination chain minimal gas limit 
      */
     function estimateBridgeFee(
         uint256 dstChainId, 
-        uint64 gasLimit, 
-        uint16 payloadLength
+        uint64 dstGasLimit, 
+        uint16 customPayloadLength,
+        bytes calldata protocolPayload
     ) public view virtual returns(uint256 paymentAmount, uint64 dstMinGasLimit) {
         dstMinGasLimit = IUTSRouter(_router).dstMinGasLimit(dstChainId);
         uint64 _configMinGasLimit = _chainConfig[dstChainId].minGasLimit;
 
         return (
-            IUTSRouter(_router).getBridgeFee(dstChainId, gasLimit, payloadLength), 
+            IUTSRouter(_router).getBridgeFee(dstChainId, dstGasLimit, customPayloadLength, protocolPayload), 
             dstMinGasLimit >= _configMinGasLimit ? dstMinGasLimit : _configMinGasLimit
         );
     }
@@ -298,14 +306,15 @@ abstract contract UTSBase is IUTSBase, ERC165 {
         bytes memory to, 
         uint256 amount, 
         uint256 dstChainId, 
-        uint64 gasLimit,
-        bytes memory payload
-    ) internal virtual returns(bool success, uint256) {
+        uint64 dstGasLimit,
+        bytes memory customPayload,
+        bytes memory protocolPayload
+    ) internal virtual returns(bool success, uint256 bridgedAmount) {
         if (from == address(0)) from = spender;
 
         ChainConfig memory config = _chainConfig[dstChainId];
 
-        if (config.minGasLimit > gasLimit) revert UTSBase__E6();
+        if (config.minGasLimit > dstGasLimit) revert UTSBase__E6();
         if (config.paused) revert UTSBase__E5();
 
         uint8 _srcDecimals = _decimals;
@@ -317,25 +326,27 @@ abstract contract UTSBase is IUTSBase, ERC165 {
             to, 
             amount, 
             dstChainId, 
-            payload
+            customPayload
         );
 
         if (amount == 0) revert UTSBase__E3();
 
-        success = _sendRequest(
-            msg.value,
-            config.peerAddress, 
-            to, 
-            amount,
-            _srcDecimals, 
-            dstChainId,
-            gasLimit,
-            payload
-        );
-
         emit Bridged(spender, from, config.peerAddress, config.peerAddress, to, amount, dstChainId);
 
-        return (success, amount);
+        return (
+            _sendRequest(
+                msg.value,
+                config.peerAddress, 
+                to, 
+                amount,
+                _srcDecimals, 
+                dstChainId,
+                dstGasLimit,
+                customPayload,
+                protocolPayload
+            ), 
+            amount
+        );
     }
 
     function _sendRequest(
@@ -345,25 +356,27 @@ abstract contract UTSBase is IUTSBase, ERC165 {
         uint256 amount,
         uint8 srcDecimals,
         uint256 dstChainId,
-        uint64 gasLimit,
-        bytes memory payload
+        uint64 dstGasLimit,
+        bytes memory customPayload,
+        bytes memory protocolPayload
     ) internal virtual returns(bool success) {
         return IUTSRouter(_router).bridge{value: payment}( 
-            dstToken, 
+            dstToken,
             msg.sender.toBytes(),
-            to, 
+            to,
             amount,
-            srcDecimals, 
+            srcDecimals,
             dstChainId,
-            gasLimit,
-            payload
+            dstGasLimit,
+            customPayload,
+            protocolPayload
         );
     }
 
     function _redeem(
         address to,
         uint256 amount,
-        bytes memory payload,
+        bytes memory customPayload,
         Origin memory origin
     ) internal virtual returns(bool success) {
         if (to == address(0)) revert UTSBase__E2();
@@ -373,7 +386,7 @@ abstract contract UTSBase is IUTSBase, ERC165 {
         if (!config.peerAddress.equal(origin.peerAddress)) revert UTSBase__E7();
         if (config.paused) revert UTSBase__E5();
         
-        amount = _mintTo(to, amount.convert(origin.decimals, _decimals), payload, origin);
+        amount = _mintTo(to, amount.convert(origin.decimals, _decimals), customPayload, origin);
 
         emit Redeemed(to, amount, origin.peerAddress, origin.peerAddress, origin.chainId, origin.sender);
 
@@ -402,7 +415,7 @@ abstract contract UTSBase is IUTSBase, ERC165 {
     function _mintTo(
         address to,
         uint256 amount,
-        bytes memory payload,
+        bytes memory customPayload,
         Origin memory origin
     ) internal virtual returns(uint256);
 
@@ -412,6 +425,6 @@ abstract contract UTSBase is IUTSBase, ERC165 {
         bytes memory to, 
         uint256 amount, 
         uint256 dstChainId, 
-        bytes memory payload
+        bytes memory customPayload
     ) internal virtual returns(uint256);
 }
