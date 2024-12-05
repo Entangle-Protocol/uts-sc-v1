@@ -17,10 +17,18 @@ interface IUTSRegistry {
 
 }
 
+/**
+ * @notice Extension of {UTSBase} that adds an external calls to emit events in the {UTSRegistry} to log crucial data
+ * off-chain.
+ *
+ * @dev Сan only be used by contracts deployed by {UTSFactory} or contracts manually registered in the {UTSRegistry}.
+ */
 abstract contract UTSBaseIndexed is UTSBaseExtended {
 
+    /// @notice The {UTSRegistry} contract address.
     address private immutable REGISTRY;
 
+    /// @notice Initializes immutable {REGISTRY} variable.
     constructor() {
         REGISTRY = IUTSFactory(msg.sender).REGISTRY();
     }

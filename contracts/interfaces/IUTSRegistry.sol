@@ -6,11 +6,11 @@ import "../libraries/UTSERC20DataTypes.sol";
 
 interface IUTSRegistry {
 
-    function validateUnderlyingRegistered(address underlyingToken) external view returns(bool);
+    function validateUnderlyingRegistered(address underlyingToken) external view returns(bool isRegistered);
 
-    function validateDeploymentRegistered(address deployment) external view returns(bool);
+    function validateDeploymentRegistered(address deployment) external view returns(bool isRegistered);
 
-    function validateFactory(address target) external view returns(bool);
+    function validateFactory(address target) external view returns(bool isAuthorized);
     
     function deploymentData(address deployment) external view returns(DeploymentData memory);
 

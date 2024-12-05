@@ -15,23 +15,48 @@ import "./interfaces/IUTSRouter.sol";
 import "contracts/interfaces/IUTSPriceFeed.sol";
 import "contracts/interfaces/IUTSMasterRouter.sol";
 
+/**
+ * @notice A contract manages the sending and receiving of bridge crosschain messages for UTSTokens and UTSConnectors 
+ * via UTS protocol V1.
+ *
+ * @dev It is an implementation of {UTSRouter} for UUPS.
+ * The {UTSRouter} contract has specific access rights in target deployments to execute {redeem} and other required functions.
+ */
 contract UTSRouter is IUTSRouter, AccessControlUpgradeable, PausableUpgradeable, UUPSUpgradeable {
     using AddressConverter for *;
     using SafeCall for address;
 
+    /// @notice {AccessControl} role identifier for pauser addresses.
     bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
+
+    /// @notice {AccessControl} role identifier for manager addresses.
     bytes32 public constant MANAGER_ROLE = keccak256("MANAGER_ROLE");
 
+    /// @notice Internal UTS protocol identifier for crosschain bridge messages.
     bytes1 private constant BRIDGE_MESSAGE_TYPE = 0x01;
-    bytes1 private constant UPDATE_MESSAGE_TYPE = 0x03;
-    uint16 private constant BPS = 10000;
-    uint8  private constant BYTES32_LENGTH = 32;
 
+    /// @notice Internal UTS protocol identifier for crosschain config update messages.
+    bytes1 private constant UPDATE_MESSAGE_TYPE = 0x03;
+
+    /// @notice Basis points divisor for percentage calculations (100.00%).
+    uint16 private constant BPS = 10000;
+
+    /// @notice {bytes32} type length.
+    uint8 private constant BYTES32_LENGTH = 32;
+
+    /// @notice Address of the {UTSMasterRouter} contract.
     address public immutable MASTER_ROUTER;
+
+    /// @notice Address of the {UTSPriceFeed} contract.
     address public immutable PRICE_FEED;
 
+    /// @notice The amount of gas required to execute {storeFailedExecution} function.
     uint64 private immutable STORE_GAS_LIMIT;
+
+    /// @notice The amount of gas per one {ChainConfig} required to execute {setChainConfigByRouter} function.
     uint64 private immutable UPDATE_GAS_LIMIT;
+
+    /// @notice The gas limit for payment native currency transfer by low level {call} function.
     uint16 private immutable PAYMENT_TRANSFER_GAS_LIMIT;
 
     /// @custom:storage-location erc7201:UTSProtocol.storage.UTSRouter.Main
@@ -44,20 +69,64 @@ contract UTSRouter is IUTSRouter, AccessControlUpgradeable, PausableUpgradeable,
     /// @dev keccak256(abi.encode(uint256(keccak256("UTSProtocol.storage.UTSRouter.Main")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant MAIN_STORAGE_LOCATION = 0x3fb4de75078a1dcbe9ae3da4a8b51c7f6a145aae2899508efdf94f16ebd0e000;
 
-    error UTSRouter__E0();     // insufficient {payment}
-    error UTSRouter__E1();     // invalid {dstChainId} value
-    error UTSRouter__E2();     // {protocolVersion} mismatch
-    error UTSRouter__E3();     // access denied: you are not a {MASTER_ROUTER}
-    error UTSRouter__E4();     // {to} zero address
-    error UTSRouter__E5();     // {dstToken} zero address
-    error UTSRouter__E6();     // {gasLimit} is less than min amount
-    error UTSRouter__E7();     // arguments length mismatch
+    /// @notice Indicates an error that the provided {msg.value} is insufficient to pay for the sending message.
+    error UTSRouter__E0();
 
-    event DstMinGasLimitSet(uint256 indexed chainId, uint64 newDstMinGasLimit, address indexed caller);
-    event DstProtocolFeeSet(uint256 indexed chainId, uint16 newDstProtocolFee, address indexed caller);
-    event DstUpdateGasSet(uint256 indexed chainId, uint64 newDstUpdateGas, address indexed caller);
+    /// @notice Indicates an error that the provided {dstChainId} is invalid.
+    error UTSRouter__E1();
 
-    /// @custom:oz-upgrades-unsafe-allow constructor
+    /// @notice Indicates an error that the function caller has an incompatible {protocolVersion}.
+    error UTSRouter__E2();
+
+    /// @notice Indicates an error that the function caller is not the {MASTER_ROUTER}.
+    error UTSRouter__E3();
+    
+    /// @notice Indicates an error that the provided {to} address is empty or zero address.
+    error UTSRouter__E4();
+    
+    /// @notice Indicates an error that the provided {dstToken} address is empty or zero address.
+    error UTSRouter__E5();
+    
+    /// @notice Indicates an error that the provided {gasLimit} is below the required minimum value.
+    error UTSRouter__E6();
+
+    /// @notice Indicates an error that lengths of provided arrays do not match.
+    error UTSRouter__E7();
+
+    /**
+     * @notice Emitted when the {_dstMinGasLimit} is updated.
+     * @param dstChainId destination chain Id.
+     * @param newDstMinGasLimit new {_dstMinGasLimit} value for corresponding {dstChainId}.
+     * @param caller the caller address who set the new {_dstMinGasLimit} value.
+     */
+    event DstMinGasLimitSet(uint256 indexed dstChainId, uint64 newDstMinGasLimit, address indexed caller);
+
+    /**
+     * @notice Emitted when the {_dstProtocolFee} is updated.
+     * @param dstChainId destination chain Id.
+     * @param newDstProtocolFee new {_dstProtocolFee} value for corresponding {dstChainId}.
+     * @param caller the caller address who set the new {_dstProtocolFee}.
+     */
+    event DstProtocolFeeSet(uint256 indexed dstChainId, uint16 newDstProtocolFee, address indexed caller);
+
+    /**
+     * @notice Emitted when the {_dstUpdateGas} is updated.
+     * @param dstChainId destination chain Id.
+     * @param newDstUpdateGas new {_dstUpdateGas} value for corresponding {dstChainId}.
+     * @param caller the caller address who set the new {_dstUpdateGas} value.
+     */
+    event DstUpdateGasSet(uint256 indexed dstChainId, uint64 newDstUpdateGas, address indexed caller);
+
+    /**
+     * @notice Initializes immutable variables.
+     * @param masterRouter address of the {UTSMasterRouter} contract.
+     * @param priceFeed address of the {UTSPriceFeed} contract.
+     * @param storeGasLimit amount of gas required to execute {storeFailedExecution} function.
+     * @param updateGasLimit amount of gas required to execute {setChainConfigByRouter} function.
+     * @param paymentTransferGasLimit gas limit for payment native currency transfer by low level {call} function.
+     *
+     * @custom:oz-upgrades-unsafe-allow constructor
+     */
     constructor(
         address masterRouter, 
         address priceFeed,
@@ -74,6 +143,10 @@ contract UTSRouter is IUTSRouter, AccessControlUpgradeable, PausableUpgradeable,
         PAYMENT_TRANSFER_GAS_LIMIT = paymentTransferGasLimit;
     }
 
+    /**
+     * @notice Initializes basic settings with provided parameters.
+     * @param defaultAdmin initial {DEFAULT_ADMIN_ROLE} address.
+     */
     function initialize(address defaultAdmin) external initializer() {
         __UUPSUpgradeable_init();
         __AccessControl_init();
@@ -82,6 +155,25 @@ contract UTSRouter is IUTSRouter, AccessControlUpgradeable, PausableUpgradeable,
         _grantRole(DEFAULT_ADMIN_ROLE, defaultAdmin);
     }
 
+    /**
+     * @notice Sends tokens bridge message by {UTSToken} or {UTSConnector} to the destination chain.
+     * @param dstToken the address of the {UTSToken} or {UTSConnector} on the destination chain.
+     * @param sender {msg.sender} address of {UTSToken} or {UTSConnector} call.
+     * @param to bridged tokens receiver on the destination chain.
+     * @param amount tokens amount to bridge to the destination chain.
+     * @param srcDecimals decimals of the source underlying ERC20 token.
+     * @param dstChainId destination chain Id.
+     * @param dstGasLimit {redeem} call gas limit on the destination chain.
+     * @param customPayload user's additional data.
+     * @param protocolPayload UTS protocol's additional data.
+     * @return success call result.
+     *
+     * @dev The {UTSToken} or {UTSConnector} peer contract on source and destination chains MUST follow requirements:
+     *      1. Supporting and following the logic and interface of {UTSBase} contract
+     *      2. UTS {protocolVersion} compatibility
+     *      3. The {UTSRouter} contract must have specific access rights to execute {redeem} and {storeFailedExecution} functions
+     *      4. The destination peer's {ChainConfig} must contain a source peer address
+     */
     function bridge(
         bytes calldata dstToken,
         bytes calldata sender,
@@ -124,6 +216,20 @@ contract UTSRouter is IUTSRouter, AccessControlUpgradeable, PausableUpgradeable,
         return true;
     }
 
+    /**
+     * @notice Sends a crosschain message to update {UTSToken} or {UTSConnector} destination chain settings to the provided chain.
+     * @param sender {msg.sender} address of {UTSToken} or {UTSConnector} call.
+     * @param dstChainIds destination chain Ids where the configuration updates should be applied.
+     * @param dstPeers {UTSToken} or {UTSConnector} peer addresses on the {dstChainIds}.
+     * @param newConfigs array of {ChainConfigUpdate} chain settings should be applied, containing:
+     *        allowedChainIds: chains Ids available for bridging in both directions
+     *        chainConfigs: {ChainConfig} settings for provided {ChainConfigUpdate.allowedChainIds}
+     * @dev See the {UTSERC20DataTypes.ChainConfigUpdate} and {UTSERC20DataTypes.ChainConfig} for details
+     * @return success call result.
+     *
+     * @dev {UTSToken} or {UTSConnector} peer contract on the destination chain must inherit from the {UTSBaseExtended} 
+     * extension or implement its' logic and interface otherwise.
+     */
     function requestToUpdateConfig(
         bytes calldata sender,
         uint256[] calldata dstChainIds,
@@ -166,22 +272,181 @@ contract UTSRouter is IUTSRouter, AccessControlUpgradeable, PausableUpgradeable,
         return true;
     }
 
+    /**
+     * @notice Executes a crosschain message received from {UTSToken} or {UTSConnector} on source chain.
+     * @param peerAddress {UTSToken} or {UTSConnector} contract address on current chain.
+     * @param messageType internal UTS protocol identifier for crosschain messages.
+     * @param localParams abi.encoded execution parameters depending on the {messageType}.
+     * @return opResult the execution result code, represented as a uint8(UTSCoreDataTypes.OperationResult).
+     * @dev Only {MASTER_ROUTER} can execute this function.
+     */
     function execute(
-        address dstToken, 
+        address peerAddress, 
         bytes1 messageType, 
         bytes calldata localParams
     ) external payable returns(uint8 opResult) {
         if (msg.sender != MASTER_ROUTER) revert UTSRouter__E3();
         if (paused()) return uint8(OperationResult.RouterPaused);
 
-        if (messageType == UPDATE_MESSAGE_TYPE) return _executeUpdateConfigs(dstToken, localParams);
+        if (messageType == UPDATE_MESSAGE_TYPE) return _executeUpdateConfigs(peerAddress, localParams);
 
-        if (messageType == BRIDGE_MESSAGE_TYPE) return _executeRedeem(dstToken, localParams);
+        if (messageType == BRIDGE_MESSAGE_TYPE) return _executeRedeem(peerAddress, localParams);
 
         return uint8(OperationResult.InvalidMessageType);
     }
 
-    function _executeRedeem(address dstToken, bytes calldata localParams) internal returns(uint8 opResult) {
+    /**
+     * @notice Pauses the {bridge}, {requestToUpdateConfig}, and {execute} functions.
+     * @dev Only addresses with the {PAUSER_ROLE} can execute this function.
+     */
+    function pause() external onlyRole(PAUSER_ROLE) {
+        _pause();
+    }
+
+    /**
+     * @notice Unpauses the {bridge}, {requestToUpdateConfig}, and {execute} functions.
+     * @dev Only addresses with the {PAUSER_ROLE} can execute this function.
+     */
+    function unpause() external onlyRole(PAUSER_ROLE) {
+        _unpause();
+    }
+
+    /**
+     * @notice Sets the amounts of gas required to execute {redeem} function on the destination chains.
+     * @param dstChainIds destination chain Ids.
+     * @param newDstMinGasLimits the amounts of gas required to execute {redeem} on the provided {dstChainId}.
+     * @dev Only addresses with the {MANAGER_ROLE} can execute this function.
+     */
+    function setDstMinGasLimit(
+        uint256[] calldata dstChainIds, 
+        uint64[] calldata newDstMinGasLimits
+    ) external onlyRole(MANAGER_ROLE) {
+        if (dstChainIds.length != newDstMinGasLimits.length) revert UTSRouter__E7();
+        for (uint256 i; dstChainIds.length > i; ++i) _setDstMinGasLimit(dstChainIds[i], newDstMinGasLimits[i]);
+    }
+
+    /**
+     * @notice Sets the protocol fees for sending crosschain messages to the destination chains.
+     * @param dstChainIds destination chain Ids.
+     * @param newDstProtocolFees protocol fees (basis points) for sending crosschain messages to the provided {dstChainId}.
+     * @dev Only addresses with the {DEFAULT_ADMIN_ROLE} can execute this function.
+     */
+    function setDstProtocolFee(
+        uint256[] calldata dstChainIds, 
+        uint16[] calldata newDstProtocolFees
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (dstChainIds.length != newDstProtocolFees.length) revert UTSRouter__E7();
+        for (uint256 i; dstChainIds.length > i; ++i) _setDstProtocolFee(dstChainIds[i], newDstProtocolFees[i]);
+    }
+
+    /**
+     * @notice Sets the amounts of gas per one {ChainConfig} required to execute {setChainConfigByRouter} function on 
+     * destination chains.
+     * @param dstChainIds destination chain Ids.
+     * @param newDstUpdateGas amounts of gas per one {ChainConfig} required to execute {setChainConfigByRouter} function
+     * on the provided {dstChainId}.
+     * @dev Only addresses with the {MANAGER_ROLE} can execute this function.
+     */
+    function setDstUpdateGas(
+        uint256[] calldata dstChainIds, 
+        uint64[] calldata newDstUpdateGas
+    ) external onlyRole(MANAGER_ROLE) {
+        if (dstChainIds.length != newDstUpdateGas.length) revert UTSRouter__E7();
+        for (uint256 i; dstChainIds.length > i; ++i) _setDstUpdateGas(dstChainIds[i], newDstUpdateGas[i]);
+    }
+
+    /**
+     * @notice Returns the UTSRouter protocol version.
+     * @return UTS protocol version.
+     */
+    function protocolVersion() public pure returns(bytes2) {
+        return 0x0101;
+    }
+
+    /**
+     * @notice Calculates the fee amount required for sending crosschain bridge message to the provided destination chain.
+     * @param dstChainId destination chain Id.
+     * @param dstGasLimit {redeem} call gas limit on the destination chain.
+     * @param payloadLength user's additional data length.
+     * @custom:unused-param protocolPayload UTS protocol's additional data.
+     * @return bridgeFeeAmount fee amount required for sending crosschain bridge message in current native currency.
+     */
+    function getBridgeFee(
+        uint256 dstChainId, 
+        uint64 dstGasLimit, 
+        uint256 payloadLength,
+        bytes calldata /* protocolPayload */
+    ) public view returns(uint256 bridgeFeeAmount) {
+        (uint256 _dstGasPrice, uint256 _dstPricePerByte) = IUTSPriceFeed(PRICE_FEED).getPrices(dstChainId);
+        return (dstGasLimit * _dstGasPrice + payloadLength * _dstPricePerByte) * (BPS + dstProtocolFee(dstChainId)) / BPS;
+    }
+
+    /**
+     * @notice Calculates the fee amount required for sending crosschain update config message to the provided destination chains.
+     * @param dstChainIds destination chain Ids.
+     * @param configsLength sum of new {ChainConfig} lengths for each {dstChainId}.
+     * @return updateFeeAmount total fee amount required for sending crosschain update config message in current native currency.
+     */
+    function getUpdateFee(
+        uint256[] calldata dstChainIds, 
+        uint256[] calldata configsLength
+    ) external view returns(uint256 updateFeeAmount) {
+        if (dstChainIds.length != configsLength.length) revert UTSRouter__E7();
+        for (uint256 i; dstChainIds.length > i; ++i) updateFeeAmount += _getUpdateFee(dstChainIds[i], configsLength[i]);
+    }
+    
+    /**
+     * @notice Returns true if this contract implements the interface defined by `interfaceId`.
+     * See the corresponding
+     * https://eips.ethereum.org/EIPS/eip-165#how-interfaces-are-identified
+     * to learn more about how these ids are created.
+     */
+    function supportsInterface(bytes4 interfaceId) public view override returns(bool) {
+        return interfaceId == type(IUTSRouter).interfaceId || super.supportsInterface(interfaceId);
+    }
+
+    /**
+     * @notice Returns the amount of gas required to execute {redeem} function on the destination chain.
+     * @param dstChainId destination chain Id.
+     * @return dstMinGasLimitAmount the amount of gas required to execute {redeem} function on the provided {dstChainId}.
+     */
+    function dstMinGasLimit(uint256 dstChainId) public view returns(uint64 dstMinGasLimitAmount) {
+        Main storage $ = _getMainStorage();
+        return $._dstMinGasLimit[dstChainId];
+    }
+
+    /**
+     * @notice Returns the protocol fee for sending crosschain messages on the destination chain.
+     * @param dstChainId destination chain Id.
+     * @return dstProtocolFeeRate protocol fees (basis points) for sending crosschain messages on the provided {dstChainId}.
+     */
+    function dstProtocolFee(uint256 dstChainId) public view returns(uint16 dstProtocolFeeRate) {
+        Main storage $ = _getMainStorage();
+        return $._dstProtocolFee[dstChainId];
+    }
+
+    /**
+     * @notice Returns the amount of gas per {ChainConfig} required to execute {setChainConfigByRouter} function on the
+     * destination chain.
+     * @param dstChainId destination chain Id.
+     * @return dstUpdateGasAmount the amount of gas per {ChainConfig} required to execute {setChainConfigByRouter} 
+     * function on the provided {dstChainId}.
+     */
+    function dstUpdateGas(uint256 dstChainId) public view returns(uint64 dstUpdateGasAmount) {
+        Main storage $ = _getMainStorage();
+        return $._dstUpdateGas[dstChainId];
+    }
+
+    function _getUpdateFee(uint256 dstChainId, uint256 configsLength) internal view returns(uint256) {
+        (uint256 _dstGasPrice, ) = IUTSPriceFeed(PRICE_FEED).getPrices(dstChainId);
+        return ((configsLength + 4) * dstUpdateGas(dstChainId) * _dstGasPrice) * (BPS + dstProtocolFee(dstChainId)) / BPS;
+    }
+
+    function _isZeroAddress(bytes calldata bytesAddress) internal pure returns(bool zeroAddress) {
+        if (BYTES32_LENGTH >= bytesAddress.length) if (bytes32(bytesAddress) == bytes32(0)) return true;
+    }
+
+    function _executeRedeem(address peerAddress, bytes calldata localParams) internal returns(uint8 opResult) {
         (
             bytes memory _srcSender,
             bytes memory _to, 
@@ -214,7 +479,7 @@ contract UTSRouter is IUTSRouter, AccessControlUpgradeable, PausableUpgradeable,
 
         if (_gasLimit > STORE_GAS_LIMIT) _gasLimit -= STORE_GAS_LIMIT;
 
-        (bool _redeemResult, bytes memory _redeemResponse) = dstToken.safeCall(
+        (bool _redeemResult, bytes memory _redeemResponse) = peerAddress.safeCall(
             _gasLimit,
             0,   // call {value}
             150, // max {_redeemResponse} bytes length to copy
@@ -224,7 +489,7 @@ contract UTSRouter is IUTSRouter, AccessControlUpgradeable, PausableUpgradeable,
         if (_redeemResult) {
             return uint8(OperationResult.Success);
         } else {
-            (bool _storeResult, /* bytes memory _storeResponse */) = dstToken.safeCall(
+            (bool _storeResult, /* bytes memory _storeResponse */) = peerAddress.safeCall(
                 STORE_GAS_LIMIT,
                 0, // call {value}
                 0, // max {_storeResponse} bytes length to copy
@@ -242,7 +507,7 @@ contract UTSRouter is IUTSRouter, AccessControlUpgradeable, PausableUpgradeable,
         }
     }
 
-    function _executeUpdateConfigs(address dstToken, bytes calldata localParams) internal returns(uint8 opResult) {
+    function _executeUpdateConfigs(address peerAddress, bytes calldata localParams) internal returns(uint8 opResult) {
         (
             bytes memory _srcSender, 
             uint256 _srcChainId, 
@@ -260,7 +525,7 @@ contract UTSRouter is IUTSRouter, AccessControlUpgradeable, PausableUpgradeable,
             decimals: 0 // meaningless variable in this message type
         });
 
-        (bool _updateResult, /* bytes memory _updateResponse */) = dstToken.safeCall(
+        (bool _updateResult, /* bytes memory _updateResponse */) = peerAddress.safeCall(
             (_newConfig.allowedChainIds.length + 4) * UPDATE_GAS_LIMIT,
             0, // call {value}
             0, // max {_updateResponse} bytes length to copy
@@ -277,65 +542,6 @@ contract UTSRouter is IUTSRouter, AccessControlUpgradeable, PausableUpgradeable,
         }
     }
 
-    function pause() external onlyRole(PAUSER_ROLE) {
-        _pause();
-    }
-
-    function unpause() external onlyRole(PAUSER_ROLE) {
-        _unpause();
-    }
-
-    function setDstMinGasLimit(
-        uint256[] calldata dstChainIds, 
-        uint64[] calldata newDstMinGasLimits
-    ) external onlyRole(MANAGER_ROLE) {
-        if (dstChainIds.length != newDstMinGasLimits.length) revert UTSRouter__E7();
-        for (uint256 i; dstChainIds.length > i; ++i) _setDstMinGasLimit(dstChainIds[i], newDstMinGasLimits[i]);
-    }
-
-    function setDstProtocolFee(
-        uint256[] calldata dstChainIds, 
-        uint16[] calldata newDstProtocolFees
-    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        if (dstChainIds.length != newDstProtocolFees.length) revert UTSRouter__E7();
-        for (uint256 i; dstChainIds.length > i; ++i) _setDstProtocolFee(dstChainIds[i], newDstProtocolFees[i]);
-    }
-
-    function setDstUpdateGas(
-        uint256[] calldata dstChainIds, 
-        uint64[] calldata newDstUpdateGas
-    ) external onlyRole(MANAGER_ROLE) {
-        if (dstChainIds.length != newDstUpdateGas.length) revert UTSRouter__E7();
-        for (uint256 i; dstChainIds.length > i; ++i) _setDstUpdateGas(dstChainIds[i], newDstUpdateGas[i]);
-    }
-
-    function protocolVersion() public pure returns(bytes2) {
-        return 0x0101;
-    }
-
-    function getBridgeFee(
-        uint256 dstChainId, 
-        uint64 dstGasLimit, 
-        uint256 payloadLength,
-        bytes calldata /* protocolPayload */
-    ) public view returns(uint256) {
-        (uint256 _dstGasPrice, uint256 _dstPricePerByte) = IUTSPriceFeed(PRICE_FEED).getPrices(dstChainId);
-        return (dstGasLimit * _dstGasPrice + payloadLength * _dstPricePerByte) * (BPS + dstProtocolFee(dstChainId)) / BPS;
-    }
-
-    function getUpdateFee(uint256[] calldata dstChainIds, uint256[] calldata configsLength) external view returns(uint256 amount) {
-        if (dstChainIds.length != configsLength.length) revert UTSRouter__E7();
-        for (uint256 i; dstChainIds.length > i; ++i) amount += _getUpdateFee(dstChainIds[i], configsLength[i]);
-    }
-
-    function supportsInterface(bytes4 interfaceId) public view override returns(bool) {
-        return interfaceId == type(IUTSRouter).interfaceId || super.supportsInterface(interfaceId);
-    }
-
-    function _authorizeUpgrade(address /* newImplementation */) internal override onlyRole(DEFAULT_ADMIN_ROLE) {
-
-    }
-
     function _paymentTransfer() internal {
         IUTSMasterRouter(MASTER_ROUTER).feeCollector().call{
             value: address(this).balance, 
@@ -343,49 +549,29 @@ contract UTSRouter is IUTSRouter, AccessControlUpgradeable, PausableUpgradeable,
         }("");
     }
 
-    function _getUpdateFee(uint256 dstChainId, uint256 configsLength) internal view returns(uint256) {
-        (uint256 _dstGasPrice, ) = IUTSPriceFeed(PRICE_FEED).getPrices(dstChainId);
-        return ((configsLength + 4) * dstUpdateGas(dstChainId) * _dstGasPrice) * (BPS + dstProtocolFee(dstChainId)) / BPS;
+    function _authorizeUpgrade(address /* newImplementation */) internal override onlyRole(DEFAULT_ADMIN_ROLE) {
+
     }
 
-    function _isZeroAddress(bytes calldata bytesAddress) internal pure returns(bool zeroAddress) {
-        if (BYTES32_LENGTH >= bytesAddress.length) if (bytes32(bytesAddress) == bytes32(0)) return true;
-    }
-
-    function dstMinGasLimit(uint256 dstChainId) public view returns(uint64) {
+    function _setDstMinGasLimit(uint256 dstChainId, uint64 newDstMinGasLimit) internal {
         Main storage $ = _getMainStorage();
-        return $._dstMinGasLimit[dstChainId];
+        $._dstMinGasLimit[dstChainId] = newDstMinGasLimit;
+
+        emit DstMinGasLimitSet(dstChainId, newDstMinGasLimit, msg.sender);
     }
 
-    function dstProtocolFee(uint256 dstChainId) public view returns(uint16) {
+    function _setDstProtocolFee(uint256 dstChainId, uint16 newDstProtocolFee) internal {
         Main storage $ = _getMainStorage();
-        return $._dstProtocolFee[dstChainId];
+        $._dstProtocolFee[dstChainId] = newDstProtocolFee;
+
+        emit DstProtocolFeeSet(dstChainId, newDstProtocolFee, msg.sender);
     }
 
-    function dstUpdateGas(uint256 dstChainId) public view returns(uint64) {
+    function _setDstUpdateGas(uint256 dstChainId, uint64 newDstUpdateGas) internal {
         Main storage $ = _getMainStorage();
-        return $._dstUpdateGas[dstChainId];
-    }
+        $._dstUpdateGas[dstChainId] = newDstUpdateGas;
 
-    function _setDstMinGasLimit(uint256 chainId, uint64 newDstMinGasLimit) internal {
-        Main storage $ = _getMainStorage();
-        $._dstMinGasLimit[chainId] = newDstMinGasLimit;
-
-        emit DstMinGasLimitSet(chainId, newDstMinGasLimit, msg.sender);
-    }
-
-    function _setDstProtocolFee(uint256 chainId, uint16 newDstProtocolFee) internal {
-        Main storage $ = _getMainStorage();
-        $._dstProtocolFee[chainId] = newDstProtocolFee;
-
-        emit DstProtocolFeeSet(chainId, newDstProtocolFee, msg.sender);
-    }
-
-    function _setDstUpdateGas(uint256 chainId, uint64 newDstUpdateGas) internal {
-        Main storage $ = _getMainStorage();
-        $._dstUpdateGas[chainId] = newDstUpdateGas;
-
-        emit DstUpdateGasSet(chainId, newDstUpdateGas, msg.sender);
+        emit DstUpdateGasSet(dstChainId, newDstUpdateGas, msg.sender);
     }
 
     function _getMainStorage() private pure returns(Main storage $) {

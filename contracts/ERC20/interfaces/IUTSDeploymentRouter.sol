@@ -74,7 +74,7 @@ interface IUTSDeploymentRouter {
     function setDstFactory(uint256[] calldata dstChainIds, bytes[] calldata newFactory) external;
 
     function execute(
-        address dstFactoryAddress, 
+        address factoryAddress, 
         bytes1 messageType, 
         bytes calldata localParams
     ) external payable returns(uint8 opResult);

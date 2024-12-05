@@ -4,6 +4,9 @@ pragma solidity 0.8.24;
 import "./UTSTokenWithFee.sol";
 import "./UTSTokenMintable.sol";
 
+/**
+ * @notice Extends UTSTokenMintable to implement fee collecting for crosschain ERC20 token bridging.  
+ */
 contract UTSTokenMintableWithFee is UTSTokenMintable, UTSTokenWithFee {
 
     function _burnFrom(

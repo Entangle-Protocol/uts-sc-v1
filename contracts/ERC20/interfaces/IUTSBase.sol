@@ -19,7 +19,7 @@ interface IUTSBase {
         bytes calldata customPayload,
         Origin calldata origin,
         uint256 nonce
-    ) external view returns(bool);
+    ) external view returns(bool isFailed);
 
     function estimateBridgeFee(
         uint256 dstChainId, 
@@ -28,12 +28,12 @@ interface IUTSBase {
         bytes calldata protocolPayload
     ) external view returns(uint256 paymentAmount, uint64 dstMinGasLimit);
 
-    function setRouter(address newRouter) external returns(bool);
+    function setRouter(address newRouter) external returns(bool success);
 
     function setChainConfig(
         uint256[] calldata allowedChainIds,
         ChainConfig[] calldata chainConfigs
-    ) external returns(bool);
+    ) external returns(bool success);
 
     function bridge(
         address from,
@@ -50,7 +50,7 @@ interface IUTSBase {
         uint256 amount,
         bytes calldata customPayload,
         Origin calldata origin
-    ) external payable returns(bool);
+    ) external payable returns(bool success);
 
     function storeFailedExecution(
         address to,
@@ -66,6 +66,6 @@ interface IUTSBase {
         bytes calldata customPayload, 
         Origin calldata origin,
         uint256 nonce
-    ) external returns(bool);
+    ) external returns(bool success);
 
 }

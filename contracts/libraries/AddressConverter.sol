@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.24;
 
+/**
+ * @notice A library contains utility functions for converting address type for the UTS protocol V1.
+ */
 library AddressConverter {
 
     function toBytes(address _address) internal pure returns(bytes memory) {

@@ -16,15 +16,18 @@ interface IUTSRouter {
         uint64 dstGasLimit,
         uint256 payloadLength,
         bytes calldata protocolPayload
-    ) external view returns(uint256);
+    ) external view returns(uint256 bridgeFeeAmount);
 
-    function getUpdateFee(uint256[] calldata dstChainIds, uint256[] calldata configsLength) external view returns(uint256);
+    function getUpdateFee(
+        uint256[] calldata dstChainIds, 
+        uint256[] calldata configsLength
+    ) external view returns(uint256 updateFeeAmount);
 
-    function dstMinGasLimit(uint256 dstChainId) external view returns(uint64);
+    function dstMinGasLimit(uint256 dstChainId) external view returns(uint64 dstMinGasLimitAmount);
 
-    function dstProtocolFee(uint256 dstChainId) external view returns(uint16);
+    function dstProtocolFee(uint256 dstChainId) external view returns(uint16 dstProtocolFeeRate);
 
-    function dstUpdateGas(uint256 dstChainId) external view returns(uint64);
+    function dstUpdateGas(uint256 dstChainId) external view returns(uint64 dstUpdateGasAmount);
 
     function setDstMinGasLimit(uint256[] calldata dstChainIds, uint64[] calldata newDstMinGasLimits) external;
 
@@ -52,7 +55,7 @@ interface IUTSRouter {
     ) external payable returns(bool success);
 
     function execute(
-        address dstToken, 
+        address peerAddress, 
         bytes1 messageType, 
         bytes calldata localParams
     ) external payable returns(uint8 opResult);

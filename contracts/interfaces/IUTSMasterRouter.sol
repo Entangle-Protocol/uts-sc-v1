@@ -7,7 +7,7 @@ interface IUTSMasterRouter {
 
     function PAYLOAD_SIZE_LIMIT() external view returns(uint16);
 
-    function validateRouter(address target) external view returns(bool);
+    function validateRouter(address target) external view returns(bool isAuthorized);
 
     function dstMasterRouter(uint256 dstChainId) external view returns(bytes memory);
 

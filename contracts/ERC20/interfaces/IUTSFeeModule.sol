@@ -12,11 +12,11 @@ interface IUTSFeeModule {
         bytes calldata to, 
         uint256 amount, 
         uint256 dstChainId,
-        uint64 gasLimit,
+        uint64 dstGasLimit,
         uint16 expectedFeeRate,
         bytes calldata customPayload,
         bytes calldata protocolPayload
-    ) external payable returns(bool, uint256);
+    ) external payable returns(bool success, uint256 afterFeeBridgedAmount);
 
     function setFeeCollector(address newFeeCollector) external;
 

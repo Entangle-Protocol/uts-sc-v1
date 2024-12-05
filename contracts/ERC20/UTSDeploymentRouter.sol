@@ -18,28 +18,58 @@ import "contracts/interfaces/IUTSRegistry.sol";
 import "contracts/interfaces/IUTSPriceFeed.sol";
 import "contracts/interfaces/IUTSMasterRouter.sol";
 
+/**
+ * @notice A contract manages the sending and receiving of crosschain deployment requests for UTSTokens and 
+ * UTSConnectors via UTS protocol V1.
+ *
+ * @dev It is an implementation of {UTSDeploymentRouter} for UUPS.
+ */
 contract UTSDeploymentRouter is IUTSDeploymentRouter, AccessControlUpgradeable, PausableUpgradeable, UUPSUpgradeable {
     using SafeERC20 for IERC20;
     using AddressConverter for address;
     using DecimalsConverter for uint256;
 
+    /// @notice {AccessControl} role identifier for pauser addresses.
     bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
+
+    /// @notice {AccessControl} role identifier for manager addresses.
     bytes32 public constant MANAGER_ROLE = keccak256("MANAGER_ROLE");
 
+    /// @notice Reserved chain Id for the native currency to payment token rate fetching.
     uint256 public constant EOB_CHAIN_ID = 33033;
 
+    /// @notice Internal UTS protocol identifier for crosschain deploy messages.
     bytes1 private constant DEPLOY_MESSAGE_TYPE = 0x02;
+
+    /// @notice Basis points divisor for percentage calculations (100.00%).
     uint16 private constant BPS = 10000;
+
+    /// @dev Precision used for the native currency to payment token rate calculations.
     uint24 private constant PRECISION = 1000000;
 
+    /// @notice Address of the {UTSMasterRouter} contract.
     address public immutable MASTER_ROUTER;
+
+    /// @notice Address of the {UTSPriceFeed} contract.
     address public immutable PRICE_FEED;
+
+    /// @notice Address of the {UTSFactory} contract.
     address public immutable FACTORY;
+
+    /// @notice Address of the {UTSRegistry} contract.
     address public immutable REGISTRY;
+
+    /// @notice Address of the token used for crosschain deploy payment.
+    /// @dev Payment in native currency is also available.
     address public immutable PAYMENT_TOKEN;
 
-    uint8  private immutable PAYMENT_TOKEN_DECIMALS;
-    uint8  private immutable NATIVE_TOKEN_DECIMALS;
+    /// @notice {PAYMENT_TOKEN} decimals.
+    uint8 private immutable PAYMENT_TOKEN_DECIMALS;
+
+    /// @notice Native currency decimals.
+    uint8 private immutable NATIVE_TOKEN_DECIMALS;
+
+    /// @notice The gas limit for payment native currency transfer by low level {call} function.
     uint16 private immutable PAYMENT_TRANSFER_GAS_LIMIT;
 
     /// @custom:storage-location erc7201:UTSProtocol.storage.UTSDeploymentRouter.Main
@@ -50,20 +80,72 @@ contract UTSDeploymentRouter is IUTSDeploymentRouter, AccessControlUpgradeable, 
     /// @dev keccak256(abi.encode(uint256(keccak256("UTSProtocol.storage.UTSDeploymentRouter.Main")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant MAIN_STORAGE_LOCATION = 0x5ef83cde492754da3fd6bddb04f9c0eea61921570db6556ef7bb11412c3f9000;
 
-    error UTSDeploymentRouter__E0();     // {deployMetadata} zero length
-    error UTSDeploymentRouter__E1();     // unallowed {dstChainId} 
-    error UTSDeploymentRouter__E2();     // access denied: you are not a {MASTER_ROUTER}
-    error UTSDeploymentRouter__E3();     // arguments length mismatch
-    error UTSDeploymentRouter__E4();     // unsupported configuration
-    error UTSDeploymentRouter__E5();     // insufficient {paymentAmount}
-    error UTSDeploymentRouter__E6();     // invalid {mintedAmountToOwner}
+    /// @notice Indicates an error that the provided {deployMetadata} array has zero length.
+    error UTSDeploymentRouter__E0();
 
-    event ConfigFactorySet(uint256 indexed chainId, bytes newFactory, address indexed caller);
-    event ConfigProtocolFeeSet(uint256 indexed chainId, uint16 newProtocolFee, address indexed caller);
-    event ConfigTokenDeployGasSet(uint256 indexed chainId, uint64 newTokenDeployGas, address indexed caller);
-    event ConfigConnectorDeployGasSet(uint256 indexed chainId, uint64 newConnectorDeployGas, address indexed caller);
+    /// @notice Indicates an error that the provided {deployMetadata.dstChainId} is not supported.
+    error UTSDeploymentRouter__E1();
 
-    /// @custom:oz-upgrades-unsafe-allow constructor
+    /// @notice Indicates an error that the function caller is not the {MASTER_ROUTER}.
+    error UTSDeploymentRouter__E2();
+
+    /// @notice Indicates an error that lengths of provided arrays do not match.
+    error UTSDeploymentRouter__E3();
+
+    /// @notice Indicates an error that the provided {deployMetadata.params} contains unsupported {UTSToken} configuration to deploy.
+    error UTSDeploymentRouter__E4();
+
+    /// @notice Indicates an error that the provided {msg.value} is insufficient to pay for the request.
+    error UTSDeploymentRouter__E5();
+
+    /// @notice Indicates an error that the provided {DeployTokenData.mintedAmountToOwner} exceeds the {DeployTokenData.initialSupply}.
+    error UTSDeploymentRouter__E6();
+
+    /**
+     * @notice Emitted when the {DstDeployConfig.factory} is updated.
+     * @param dstChainId destination chain Id.
+     * @param newFactory new {DstDeployConfig.factory} address for corresponding {dstChainId}.
+     * @param caller the caller address who set the new {DstDeployConfig.factory}.
+     */
+    event ConfigFactorySet(uint256 indexed dstChainId, bytes newFactory, address indexed caller);
+
+    /**
+     * @notice Emitted when the {DstDeployConfig.protocolFee} is updated.
+     * @param dstChainId destination chain Id.
+     * @param newProtocolFee new {DstDeployConfig.protocolFee} value for corresponding {dstChainId}.
+     * @param caller the caller address who set the new {DstDeployConfig.protocolFee}.
+     */
+    event ConfigProtocolFeeSet(uint256 indexed dstChainId, uint16 newProtocolFee, address indexed caller);
+
+    /**
+     * @notice Emitted when the {DstDeployConfig.tokenDeployGas} is updated.
+     * @param dstChainId destination chain Id.
+     * @param newTokenDeployGas new {DstDeployConfig.tokenDeployGas} amount for corresponding {dstChainId}.
+     * @param caller the caller address who set the new {DstDeployConfig.tokenDeployGas}.
+     */
+    event ConfigTokenDeployGasSet(uint256 indexed dstChainId, uint64 newTokenDeployGas, address indexed caller);
+
+    /**
+     * @notice Emitted when the {DstDeployConfig.connectorDeployGas} is updated.
+     * @param dstChainId destination chain Id.
+     * @param newConnectorDeployGas new {DstDeployConfig.connectorDeployGas} amount for corresponding {dstChainId}.
+     * @param caller the caller address who set the new {DstDeployConfig.connectorDeployGas}.
+     */
+    event ConfigConnectorDeployGasSet(uint256 indexed dstChainId, uint64 newConnectorDeployGas, address indexed caller);
+
+    /**
+     * @notice Initializes immutable variables.
+     * @param masterRouter address of the {UTSMasterRouter} contract.
+     * @param priceFeed address of the {UTSPriceFeed} contract.
+     * @param factory address of the {UTSFactory} contract.
+     * @param registry address of the {UTSRegistry} contract.
+     * @param paymentToken address of the {PAYMENT_TOKEN} used for payment.
+     * @param paymentTokenDecimals {PAYMENT_TOKEN} decimals.
+     * @param nativeTokenDecimals native currency decimals.
+     * @param paymentTransferGasLimit gas limit for payment native currency transfer by low level {call} function.
+     *
+     * @custom:oz-upgrades-unsafe-allow constructor
+     */ 
     constructor(
         address masterRouter, 
         address priceFeed, 
@@ -86,6 +168,10 @@ contract UTSDeploymentRouter is IUTSDeploymentRouter, AccessControlUpgradeable, 
         PAYMENT_TRANSFER_GAS_LIMIT = paymentTransferGasLimit;
     }
 
+    /**
+     * @notice Initializes basic settings with provided parameters.
+     * @param defaultAdmin initial {DEFAULT_ADMIN_ROLE} address.
+     */
     function initialize(address defaultAdmin) external initializer() {
         __UUPSUpgradeable_init();
         __AccessControl_init();
@@ -94,6 +180,20 @@ contract UTSDeploymentRouter is IUTSDeploymentRouter, AccessControlUpgradeable, 
         _grantRole(DEFAULT_ADMIN_ROLE, defaultAdmin);
     }
 
+    /**
+     * @notice Sends UTSToken and UTSConnector deployment crosschain requests via UTS protocol V1.
+     * @param deployMetadata array of {DeployMetadata} structs, containing destination chain Ids and deploy parameters:
+     *        dstChainId: destination chain Id
+     *        isConnector: flag indicating whether is request for deploy connector(true) or token(false)
+     *        params: abi.encoded {DeployTokenData} struct or abi.encoded {DeployConnectorData} struct
+     * @dev See the {UTSERC20DataTypes.DeployTokenData} and {UTSERC20DataTypes.DeployConnectorData} for details.
+     *
+     * @param paymentToken address of the token used for payment.
+     * @dev Any {paymentToken} address different from the {PAYMENT_TOKEN} is identified as a payment in native currency.
+     *
+     * @return paymentAmount total payment required for send deployment requests.
+     * @return currentChainDeployment deployment address on the current chain (if a relevant request was provided).
+     */
     function sendDeployRequest(
         DeployMetadata[] calldata deployMetadata,
         address paymentToken
@@ -176,15 +276,28 @@ contract UTSDeploymentRouter is IUTSDeploymentRouter, AccessControlUpgradeable, 
         return (paymentAmount, currentChainDeployment);
     }
 
+    /**
+     * @notice Executes a deployment request received from source chain via UTS protocol V1.
+     * @param factoryAddress {UTSFactory} address on current chain.
+     * @param messageType internal UTS protocol identifier for crosschain messages. Must match {DEPLOY_MESSAGE_TYPE}.
+     * @param localParams abi.encoded deploy parameters, containing:
+     *        isConnector: flag indicating whether is request for deploy connector(true) or token(false)
+     *        deployer: source chain {msg.sender} address
+     *        deployParams: abi.encoded {DeployTokenData} struct or abi.encoded {DeployConnectorData} struct
+     * @return opResult the execution result code, represented as a uint8(UTSCoreDataTypes.OperationResult).
+     * @dev Only {MASTER_ROUTER} can execute this function.
+     */
     function execute(
-        address dstFactoryAddress, 
-        bytes1 messageType, 
+        address factoryAddress, 
+        bytes1 messageType,
         bytes calldata localParams
     ) external payable returns(uint8 opResult) {
         if (msg.sender != MASTER_ROUTER) revert UTSDeploymentRouter__E2();
-        if (paused()) return uint8(OperationResult.RouterPaused); 
 
+        if (paused()) return uint8(OperationResult.RouterPaused); 
         if (messageType != DEPLOY_MESSAGE_TYPE) return uint8(OperationResult.InvalidMessageType); 
+        if (!IUTSRegistry(REGISTRY).validateFactory(factoryAddress)) return uint8(OperationResult.UnauthorizedRouter);
+        if (IPausable(factoryAddress).paused()) return uint8(OperationResult.RouterPaused);
 
         ( 
             bool _isConnector, 
@@ -192,10 +305,7 @@ contract UTSDeploymentRouter is IUTSDeploymentRouter, AccessControlUpgradeable, 
             bytes memory _deployParams
         ) = abi.decode(localParams, (bool, bytes, bytes));
 
-        if (!IUTSRegistry(REGISTRY).validateFactory(dstFactoryAddress)) return uint8(OperationResult.UnauthorizedRouter);
-        if (IPausable(dstFactoryAddress).paused()) return uint8(OperationResult.RouterPaused);
-
-        (bool _deployResult, bytes memory _deployResponse) = dstFactoryAddress.call(
+        (bool _deployResult, bytes memory _deployResponse) = factoryAddress.call(
             abi.encodeCall(IUTSFactory.deployByRouter, (_isConnector, _deployer, _deployParams))
         );
 
@@ -206,14 +316,32 @@ contract UTSDeploymentRouter is IUTSDeploymentRouter, AccessControlUpgradeable, 
         }
     }
 
+    /**
+     * @notice Pauses the {sendDeployRequest} and {execute} functions.
+     * @dev Only addresses with the {PAUSER_ROLE} can execute this function.
+     */
     function pause() external onlyRole(PAUSER_ROLE) {
         _pause();
     }
 
+    /**
+     * @notice Unpauses the {sendDeployRequest} and {execute} functions.
+     * @dev Only addresses with the {PAUSER_ROLE} can execute this function.
+     */
     function unpause() external onlyRole(PAUSER_ROLE) {
         _unpause();
     }
 
+    /**
+     * @notice Sets the destination chains settings.
+     * @param dstChainIds destination chain Ids.
+     * @param newConfigs {DstDeployConfig} structs array containing destination chains settings: 
+     *        factory: destination {UTSFactory} address
+     *        tokenDeployGas: the amount of gas required to deploy the {UTSToken} on the destination chain
+     *        connectorDeployGas: the amount of gas required to deploy the {UTSConnector} on the destination chain
+     *        protocolFee: protocol fee (basis points) for crosschain deployment on the destination chain
+     * @dev Only addresses with the {DEFAULT_ADMIN_ROLE} can execute this function.
+     */
     function setDstDeployConfig(
         uint256[] calldata dstChainIds,
         DstDeployConfig[] calldata newConfigs
@@ -227,6 +355,13 @@ contract UTSDeploymentRouter is IUTSDeploymentRouter, AccessControlUpgradeable, 
         }
     }
 
+    /**
+     * @notice Sets the amounts of gas required to deploy on the destination chains.
+     * @param dstChainIds destination chain Ids.
+     * @param newTokenDeployGas the amounts of gas required to deploy the {UTSToken} on the corresponding {dstChainId}.
+     * @param newTokenDeployGas the amounts of gas required to deploy the {UTSConnector} on the corresponding {dstChainId}.
+     * @dev Only addresses with the {MANAGER_ROLE} can execute this function.
+     */
     function setDstDeployGas(
         uint256[] calldata dstChainIds,
         uint64[] calldata newTokenDeployGas,
@@ -240,6 +375,12 @@ contract UTSDeploymentRouter is IUTSDeploymentRouter, AccessControlUpgradeable, 
         }
     }
 
+    /**
+     * @notice Sets the protocol fees for deploy on the destination chains.
+     * @param dstChainIds destination chain Ids.
+     * @param newProtocolFees protocol fees (basis points) for crosschain deployment on the corresponding {dstChainId}.
+     * @dev Only addresses with the {MANAGER_ROLE} can execute this function.
+     */
     function setDstProtocolFee(
         uint256[] calldata dstChainIds, 
         uint16[] calldata newProtocolFees
@@ -248,6 +389,12 @@ contract UTSDeploymentRouter is IUTSDeploymentRouter, AccessControlUpgradeable, 
         for (uint256 i; dstChainIds.length > i; ++i) _setProtocolFee(dstChainIds[i], newProtocolFees[i]);
     }
 
+    /**
+     * @notice Sets the destination {UTSFactory} addresses.
+     * @param dstChainIds destination chain Ids.
+     * @param newFactory {UTSFactory} addresses on the corresponding {dstChainId}.
+     * @dev Only addresses with the {DEFAULT_ADMIN_ROLE} can execute this function.
+     */
     function setDstFactory(
         uint256[] calldata dstChainIds, 
         bytes[] calldata newFactory
@@ -256,6 +403,13 @@ contract UTSDeploymentRouter is IUTSDeploymentRouter, AccessControlUpgradeable, 
         for (uint256 i; dstChainIds.length > i; ++i) _setFactory(dstChainIds[i], newFactory[i]);
     }
 
+    /**
+     * @notice Estimates the total payment required for send crosschain deployment requests.
+     * @param dstTokenChainIds destination chain Ids for {UTSToken} deployments.
+     * @param dstConnectorChainIds destination chain Ids for {UTSConnector} deployments.
+     * @return paymentTokenAmount estimated total payment amount in the {PAYMENT_TOKEN}.
+     * @return paymentNativeAmount estimated total payment amount in native currency.
+     */
     function estimateDeployTotal(
         uint256[] calldata dstTokenChainIds,
         uint256[] calldata dstConnectorChainIds
@@ -286,6 +440,14 @@ contract UTSDeploymentRouter is IUTSDeploymentRouter, AccessControlUpgradeable, 
         );
     }
 
+    /**
+     * @notice Estimates the separated payments required for send crosschain deployment requests in the {PAYMENT_TOKEN}.
+     * @param dstTokenChainIds destination chain Ids for {UTSToken} deployments.
+     * @param dstConnectorChainIds destination chain Ids for {UTSConnector} deployments.
+     * @return tokenPaymentAmount array of estimated payment amount in the {PAYMENT_TOKEN} for each {dstChainId}.
+     * @return connectorPaymentAmount array of estimated payment amount in the {PAYMENT_TOKEN} for each {dstChainId}.
+     * @return totalPaymentAmount estimated total payment amount in the {PAYMENT_TOKEN}.
+     */
     function estimateDeploy(
         uint256[] calldata dstTokenChainIds,
         uint256[] calldata dstConnectorChainIds
@@ -334,6 +496,14 @@ contract UTSDeploymentRouter is IUTSDeploymentRouter, AccessControlUpgradeable, 
         }
     }
 
+    /**
+     * @notice Estimates the separated payments required for send crosschain deployment requests in native currency.
+     * @param dstTokenChainIds destination chain Ids for {UTSToken} deployments.
+     * @param dstConnectorChainIds destination chain Ids for {UTSConnector} deployments.
+     * @return tokenPaymentAmountNative array of estimated payment amount in native currency for each {dstChainId}.
+     * @return connectorPaymentAmountNative array of estimated payment amount in native currency for each {dstChainId}.
+     * @return totalPaymentAmountNative estimated total payment amount in native currency.
+     */
     function estimateDeployNative(
         uint256[] calldata dstTokenChainIds,
         uint256[] calldata dstConnectorChainIds
@@ -376,81 +546,127 @@ contract UTSDeploymentRouter is IUTSDeploymentRouter, AccessControlUpgradeable, 
         }
     }
 
+    /**
+     * @notice Returns the abi.encoded {DeployTokenData} struct as a parameter for the {sendDeployRequest} function.
+     * @param deployData see the {UTSERC20DataTypes.DeployTokenData} for details.
+     * @return abi.encoded {DeployTokenData} struct.
+     */
     function getDeployTokenParams(DeployTokenData calldata deployData) external pure returns(bytes memory) {
         return abi.encode(deployData);
     }
 
+    /**
+     * @notice Returns the abi.encoded {DeployConnectorData} struct as a parameter for the {sendDeployRequest} function.
+     * @param deployData see the {UTSERC20DataTypes.DeployConnectorData} for details.
+     * @return abi.encoded {DeployConnectorData} struct.
+     */
     function getDeployConnectorParams(DeployConnectorData calldata deployData) external pure returns(bytes memory) {
         return abi.encode(deployData);
     }
 
+    /**
+     * @notice Returns the UTSDeploymentRouter protocol version.
+     * @return UTS protocol version.
+     */
     function protocolVersion() public pure returns(bytes2) {
         return 0x0101;
     }
 
+    /**
+     * @notice Returns true if this contract implements the interface defined by `interfaceId`.
+     * See the corresponding
+     * https://eips.ethereum.org/EIPS/eip-165#how-interfaces-are-identified
+     * to learn more about how these ids are created.
+     */
     function supportsInterface(bytes4 interfaceId) public view override returns(bool) {
         return interfaceId == type(IUTSDeploymentRouter).interfaceId || super.supportsInterface(interfaceId);
     }
 
-    function _authorizeUpgrade(address /* newImplementation */) internal override onlyRole(DEFAULT_ADMIN_ROLE) {
+    /**
+     * @notice Returns destination chain settings.
+     * @param dstChainId destination chain Id.
+     * @return {DstDeployConfig} struct.
+     * @dev See the {UTSERC20DataTypes.DstDeployConfig} for details.
+     */
+    function dstDeployConfig(uint256 dstChainId) public view returns(DstDeployConfig memory) {
+        Main storage $ = _getMainStorage();
+        return $._dstDeployConfig[dstChainId];
+    }
 
+    /**
+     * @notice Returns the amount of gas required to deploy the {UTSToken}.
+     * @param dstChainId destination chain Id.
+     * @return The amount of gas required to deploy the {UTSToken} on the provided {dstChainId}.
+     */
+    function dstTokenDeployGas(uint256 dstChainId) external view returns(uint64) {
+        Main storage $ = _getMainStorage();
+        return $._dstDeployConfig[dstChainId].tokenDeployGas;
+    }
+
+    /**
+     * @notice Returns the amount of gas required to deploy the {UTSConnector}.
+     * @param dstChainId destination chain Id.
+     * @return The amount of gas required to deploy the {UTSConnector} on the provided {dstChainId}.
+     */
+    function dstConnectorDeployGas(uint256 dstChainId) external view returns(uint64) {
+        Main storage $ = _getMainStorage();
+        return $._dstDeployConfig[dstChainId].connectorDeployGas;
+    }
+
+    /**
+     * @notice Returns the protocol fee for deploy on the destination chains.
+     * @param dstChainId destination chain Id.
+     * @return Protocol fees (basis points) for crosschain deployment on the provided {dstChainId}.
+     */
+    function dstProtocolFee(uint256 dstChainId) external view returns(uint16) {
+        Main storage $ = _getMainStorage();
+        return $._dstDeployConfig[dstChainId].protocolFee;
+    }
+
+    /**
+     * @notice Returns the destination {UTSFactory} contract address.
+     * @param dstChainId destination chain Id.
+     * @return {UTSFactory} address on the provided {dstChainId}.
+     */
+    function dstFactory(uint256 dstChainId) external view returns(bytes memory) {
+        Main storage $ = _getMainStorage();
+        return $._dstDeployConfig[dstChainId].factory;
     }
 
     function _normalize(uint256 amount, uint256 rate) internal view returns(uint256) {
         return (amount * rate / PRECISION).convert(NATIVE_TOKEN_DECIMALS, PAYMENT_TOKEN_DECIMALS);
     }
 
-    function dstDeployConfig(uint256 dstChainId) public view returns(DstDeployConfig memory) {
-        Main storage $ = _getMainStorage();
-        return $._dstDeployConfig[dstChainId];
+    function _authorizeUpgrade(address /* newImplementation */) internal override onlyRole(DEFAULT_ADMIN_ROLE) {
+
     }
 
-    function dstTokenDeployGas(uint256 dstChainId) external view returns(uint64) {
+    function _setTokenDeployGas(uint256 dstChainId, uint64 newTokenDeployGas) internal {
         Main storage $ = _getMainStorage();
-        return $._dstDeployConfig[dstChainId].tokenDeployGas;
+        $._dstDeployConfig[dstChainId].tokenDeployGas = newTokenDeployGas;
+
+        emit ConfigTokenDeployGasSet(dstChainId, newTokenDeployGas, msg.sender);
     }
 
-    function dstConnectorDeployGas(uint256 dstChainId) external view returns(uint64) {
+    function _setConnectorDeployGas(uint256 dstChainId, uint64 newConnectorDeployGas) internal {
         Main storage $ = _getMainStorage();
-        return $._dstDeployConfig[dstChainId].connectorDeployGas;
+        $._dstDeployConfig[dstChainId].connectorDeployGas = newConnectorDeployGas;
+
+        emit ConfigConnectorDeployGasSet(dstChainId, newConnectorDeployGas, msg.sender);
     }
 
-    function dstProtocolFee(uint256 dstChainId) external view returns(uint16) {
+    function _setProtocolFee(uint256 dstChainId, uint16 newProtocolFee) internal {
         Main storage $ = _getMainStorage();
-        return $._dstDeployConfig[dstChainId].protocolFee;
+        $._dstDeployConfig[dstChainId].protocolFee = newProtocolFee;
+
+        emit ConfigProtocolFeeSet(dstChainId, newProtocolFee, msg.sender);
     }
 
-    function dstFactory(uint256 dstChainId) external view returns(bytes memory) {
+    function _setFactory(uint256 dstChainId, bytes memory newFactory) internal {
         Main storage $ = _getMainStorage();
-        return $._dstDeployConfig[dstChainId].factory;
-    }
+        $._dstDeployConfig[dstChainId].factory = newFactory;
 
-    function _setTokenDeployGas(uint256 chainId, uint64 newTokenDeployGas) internal {
-        Main storage $ = _getMainStorage();
-        $._dstDeployConfig[chainId].tokenDeployGas = newTokenDeployGas;
-
-        emit ConfigTokenDeployGasSet(chainId, newTokenDeployGas, msg.sender);
-    }
-
-    function _setConnectorDeployGas(uint256 chainId, uint64 newConnectorDeployGas) internal {
-        Main storage $ = _getMainStorage();
-        $._dstDeployConfig[chainId].connectorDeployGas = newConnectorDeployGas;
-
-        emit ConfigConnectorDeployGasSet(chainId, newConnectorDeployGas, msg.sender);
-    }
-
-    function _setProtocolFee(uint256 chainId, uint16 newProtocolFee) internal {
-        Main storage $ = _getMainStorage();
-        $._dstDeployConfig[chainId].protocolFee = newProtocolFee;
-
-        emit ConfigProtocolFeeSet(chainId, newProtocolFee, msg.sender);
-    }
-
-    function _setFactory(uint256 chainId, bytes memory newFactory) internal {
-        Main storage $ = _getMainStorage();
-        $._dstDeployConfig[chainId].factory = newFactory;
-
-        emit ConfigFactorySet(chainId, newFactory, msg.sender);
+        emit ConfigFactorySet(dstChainId, newFactory, msg.sender);
     }
 
     function _getMainStorage() private pure returns(Main storage $) {

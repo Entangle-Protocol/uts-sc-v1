@@ -12,54 +12,137 @@ import "./interfaces/IUTSBase.sol";
 import "./interfaces/IUTSRouter.sol";
 
 /**
- * @dev
- * The {__UTSBase_init} function must be called before using other functions of the {UTSBase} contract.
- * The {_authorizeCall} function must be overridden to include access restriction to the {setRouter} and {setChainConfig} functions.
- * The {_mintTo} function must be overridden to implement {mint}/{transfer} underlying tokens to receiver {to} address by {_router}.
- * The {_burnFrom} function must be overridden to implement {burn}/{transferFrom} underlying tokens from {spender}/{from} address for bridging.
+ * @notice Abstract contract implementing minimal and basic functionality for sending and receiving crosschain bridges 
+ * of ERC20 tokens via UTS protocol V1. 
+ *
+ * @dev 
+ * The {__UTSBase_init} function MUST be called before using other functions of the {UTSBase} contract.
+ * The {_authorizeCall} function MUST be overridden to include access restriction to the {setRouter} and 
+ * {setChainConfig} functions.
+ * The {_mintTo} function MUST be overridden to implement {mint}/{transfer} underlying tokens to receiver {to} address 
+ * by {_router}.
+ * The {_burnFrom} function MUST be overridden to implement {burn}/{transferFrom} underlying tokens from {spender}/{from}
+ * address for bridging.
  */
 abstract contract UTSBase is IUTSBase, ERC165 {
     using AddressConverter for address;
     using DecimalsConverter for uint256;
     using BytesLib for bytes;
 
-    uint256 private  _retryNonce;
-    address private  _router;
+    /// @notice Nonce used for {storeFailedExecution} executions to guarantee uniqueness.
+    uint256 private _retryNonce;
 
+    /**
+     * @notice Address that can execute {redeem} and {storeFailedExecution} functions.
+     * @dev Should be an authorized {UTSRouter} contract address or a zero address in case of disconnection from UTS protocol.
+     */
+    address private _router;
+
+    /// @notice Address of the underlying ERC20 token.
     address internal _underlyingToken;
-    uint8   internal _decimals;
 
+    /// @notice Decimals of the underlying ERC20 token.
+    uint8 internal _decimals;
+
+    /// @notice {ChainConfig} settings for the corresponding destination chain Id.
+    /// @dev See the {UTSERC20DataTypes.ChainConfig} for details.
     mapping(uint256 chainId => ChainConfig dstChainConfig) internal _chainConfig;
+
+    /**
+     * @notice Receiver address for the corresponding {redeem} message hash.
+     * @dev Mapping is filled only by {storeFailedExecution} function if the {redeem} call is unsuccessful.
+     * IMPORTANT: Execution of the {_redeem} function with a {to} zero address MUST be forbidden.
+     */
     mapping(bytes32 msgHash => address receiverAddress) private _failedExecution;
 
-    error UTSBase__E0();     // initialized
-    error UTSBase__E1();     // access denied: only {router} allowed
-    error UTSBase__E2();     // {to} zero address
-    error UTSBase__E3();     // zero {amount} to bridge
-    error UTSBase__E4();     // arguments length mismatch
-    error UTSBase__E5();     // {peer} address paused
-    error UTSBase__E6();     // {gasLimit} is less than min amount
-    error UTSBase__E7();     // invalid {peer} address
+    /// @notice Indicates an error that the {UTSBase} contract initialized already.
+    error UTSBase__E0();
 
+    /// @notice Indicates an error that the function caller is not the {_router}.
+    error UTSBase__E1();
+
+    /// @notice Indicates an error that the {to} is zero address.
+    error UTSBase__E2();
+
+    /// @notice Indicates an error that the {amount} to bridge is zero.
+    error UTSBase__E3();
+
+    /// @notice Indicates an error that lengths of {allowedChainIds} and {chainConfigs} do not match in the {_setChainConfig} function.
+    error UTSBase__E4();
+
+    /// @notice Indicates an error that the destination {peerAddress} is paused for sending and receiving crosschain messages.
+    error UTSBase__E5();
+
+    /// @notice Indicates an error that the provided {dstGasLimit} is less than the minimum required amount.
+    error UTSBase__E6();
+
+    /// @notice Indicates an error that the source {Origin.peerAddress} is unauthorized in the {ChainConfig} for corresponding {Origin.chainId}.
+    error UTSBase__E7();
+
+    /**
+     * @notice Emitted when the {_router} address is updated.
+     * @param caller the caller address who set the new {_router} address.
+     * @param newRouter the address of the new {_router}.
+     */
     event RouterSet(address indexed caller, address newRouter);
+
+    /**
+     * @notice Emitted when {ChainConfig} settings are updated.
+     * @param caller the caller address who set the new destination {ChainConfig} settings.
+     * @param allowedChainIds new chains Ids available for bridging in both directions.
+     * @param chainConfigs array of new {ChainConfig} settings for corresponding {allowedChainIds}.
+     */
     event ChainConfigUpdated(address indexed caller, uint256[] allowedChainIds, ChainConfig[] chainConfigs);
+
+    /**
+     * @notice Emitted when tokens are successfully redeemed from the source chain.
+     * @param to tokens receiver on the current chain.
+     * @param amount received amount.
+     * @param srcPeerAddressIndexed indexed source {peerAddress}.
+     * @param srcPeerAddress source {peerAddress}.
+     * @param srcChainId source chain Id.
+     * @param sender source chain sender's address.
+     */
     event Redeemed(
         address indexed to, 
         uint256 amount, 
-        bytes indexed peerAddressIndexed, 
-        bytes peerAddress,
-        uint256 indexed chainId,
+        bytes indexed srcPeerAddressIndexed, 
+        bytes srcPeerAddress,
+        uint256 indexed srcChainId,
         bytes sender
     );
+
+    /**
+     * @notice Emitted when crosschain bridge message is successfully sent to a destination chain.
+     * @param spender the caller address who initiate the bridge.
+     * @param from tokens holder on the current chain.
+     * @param dstPeerAddressIndexed indexed destination {peerAddress}.
+     * @param dstPeerAddress destination {peerAddress}.
+     * @param to bridged tokens receiver on the destination chain.
+     * @param amount bridged tokens amount.
+     * @param dstChainId destination chain Id.
+     */
     event Bridged(
         address indexed spender, 
         address from, 
-        bytes indexed peerAddressIndexed, 
-        bytes peerAddress,
+        bytes indexed dstPeerAddressIndexed, 
+        bytes dstPeerAddress,
         bytes to, 
-        uint256 amount, 
-        uint256 indexed chainId
+        uint256 amount,
+        uint256 indexed dstChainId
     );
+
+    /**
+     * @notice Emitted when a {storeFailedExecution} executed in case of failed {redeem} call.
+     * @param to tokens receiver on the current chain.
+     * @param amount amount to receive.
+     * @param customPayload user's additional data.
+     * @param originIndexed indexed source chain data.
+     * @param origin source chain data.
+     * @dev See the {UTSERC20DataTypes.Origin} for details.
+     * @param result handled error message.
+     * @param nonce unique failed execution's counter.
+     */
     event ExecutionFailed(
         address indexed to, 
         uint256 amount, 
@@ -71,10 +154,12 @@ abstract contract UTSBase is IUTSBase, ERC165 {
     );
 
     /**
-     * @notice Initializes basic settings
-     * @param underlyingToken_ underlying ERC20 token address
-     * @param decimals_ underlying token decimals
-     * @notice Сan and should be called only once
+     * @notice Initializes basic settings.
+     * @param underlyingToken_ underlying ERC20 token address.
+     * @dev In case this contract and ERC20 are the same contract, {underlyingToken_} should be address(this).
+     *
+     * @param decimals_ underlying token decimals.
+     * @dev Can and MUST be called only once.
      */
     function __UTSBase_init(address underlyingToken_, uint8 decimals_) internal {
         if (_retryNonce > 0) revert UTSBase__E0();
@@ -88,16 +173,16 @@ abstract contract UTSBase is IUTSBase, ERC165 {
     }
 
     /**
-     * @notice Initiates the tokens bridging
-     * @param from source tokens holder
-     * @param to destination tokens receiver
-     * @param amount amount to bridge
-     * @param dstChainId destination chain Id
-     * @param dstGasLimit {redeem} call gas limit
-     * @param customPayload user's additional data
-     * @param protocolPayload protocol's additional data
-     * @return success Call result
-     * @return bridgedAmount bridged amount
+     * @notice Initiates the tokens bridging.
+     * @param from tokens holder on the current chain.
+     * @param to bridged tokens receiver on the destination chain.
+     * @param amount tokens amount to bridge to the destination chain.
+     * @param dstChainId destination chain Id.
+     * @param dstGasLimit {redeem} call gas limit on the destination chain.
+     * @param customPayload user's additional data.
+     * @param protocolPayload UTS protocol's additional data.
+     * @return success call result.
+     * @return bridgedAmount bridged tokens amount.
      */
     function bridge(
         address from,
@@ -122,33 +207,35 @@ abstract contract UTSBase is IUTSBase, ERC165 {
     }
 
     /**
-     * @notice Executes the tokens delivery from the source chain
-     * @param to tokens receiver
-     * @param amount amount to receive
-     * @param customPayload user's additional data
-     * @param origin source chain settings
-     * @return Call result
-     * @notice Only the {_router} can execute this function
+     * @notice Executes the tokens delivery from the source chain.
+     * @param to tokens receiver on the current chain.
+     * @param amount amount to receive.
+     * @param customPayload user's additional data.
+     * @param origin source chain data.
+     * @dev See the {UTSERC20DataTypes.Origin} for details.
+     * @return success call result.
+     * @dev Only the {_router} can execute this function.
      */
     function redeem(
         address to,
         uint256 amount,
         bytes calldata customPayload,
         Origin calldata origin
-    ) external payable virtual returns(bool) {
+    ) external payable virtual returns(bool success) {
         _onlyRouter();
 
         return _redeem(to, amount, customPayload, origin);
     }
 
     /**
-     * @notice Stores failed execution's data
-     * @param to tokens receiver
-     * @param amount amount to receive
-     * @param customPayload user's additional data
-     * @param origin source chain settings
-     * @param result handled error message
-     * @notice Only the {_router} can execute this function
+     * @notice Stores failed execution's data.
+     * @param to tokens receiver on the current chain.
+     * @param amount tokens amount to receive.
+     * @param customPayload user's additional data.
+     * @param origin source chain data.
+     * @dev See the {UTSERC20DataTypes.Origin} for details.
+     * @param result handled error message.
+     * @dev Only the {_router} can execute this function.
      */
     function storeFailedExecution(
         address to,
@@ -167,13 +254,14 @@ abstract contract UTSBase is IUTSBase, ERC165 {
     }
 
     /**
-     * @notice Executes the tokens delivery after failed execution
-     * @param to tokens receiver
-     * @param amount amount to receive
-     * @param customPayload user's additional data
-     * @param origin source chain settings
-     * @param nonce unique failed execution's counter
-     * @return Call result
+     * @notice Executes the tokens delivery after failed execution.
+     * @param to tokens receiver on the current chain.
+     * @param amount amount to receive.
+     * @param customPayload user's additional data.
+     * @param origin source chain data.
+     * @dev See the {UTSERC20DataTypes.Origin} for details.
+     * @param nonce unique failed execution's counter.
+     * @return success call result.
      */
     function retryRedeem(
         address to,
@@ -181,7 +269,7 @@ abstract contract UTSBase is IUTSBase, ERC165 {
         bytes calldata customPayload,
         Origin calldata origin,
         uint256 nonce
-    ) external virtual returns(bool) {
+    ) external virtual returns(bool success) {
         if (to == address(0)) return false;
         bytes32 _hash = keccak256(abi.encode(to, amount, customPayload, origin, nonce));
         if (_failedExecution[_hash] != to) return false;
@@ -191,15 +279,20 @@ abstract contract UTSBase is IUTSBase, ERC165 {
     }
 
     /**
-     * @notice Sets the destination chains settings
-     * @param allowedChainIds chains Ids available for bridging
-     * @param chainConfigs chains Ids settings
-     * @return Call result
+     * @notice Sets the destination chains settings.
+     * @param allowedChainIds chains Ids available for bridging in both directions.
+     * @param chainConfigs array of {ChainConfig} settings for provided {allowedChainIds}, containing:
+     *        peerAddress: connected {UTSToken} or {UTSConnector} contract address on the destination chain
+     *        minGasLimit: the amount of gas required to execute {redeem} function on the destination chain
+     *        decimals: connected {peerAddress} decimals on the destination chain
+     *        paused: flag indicating whether current contract is paused for sending/receiving messages from the connected {peerAddress}
+     *
+     * @return success call result.
      */
     function setChainConfig(
         uint256[] calldata allowedChainIds,
         ChainConfig[] calldata chainConfigs
-    ) external virtual returns(bool) {
+    ) external virtual returns(bool success) {
         _authorizeCall();
         _setChainConfig(allowedChainIds, chainConfigs);
 
@@ -207,11 +300,12 @@ abstract contract UTSBase is IUTSBase, ERC165 {
     }
 
     /**
-     * @notice Sets the UTSRouter address
-     * @param newRouter UTSRouter address
-     * @return Call result
+     * @notice Sets the UTSRouter address.
+     * @param newRouter new {_router} address.
+     * @return success call result.
+     * @dev {_router} address has access rights to execute {redeem} and {storeFailedExecution} functions.
      */
-    function setRouter(address newRouter) external virtual returns(bool) {
+    function setRouter(address newRouter) external virtual returns(bool success) {
         _authorizeCall();
         _setRouter(newRouter);
 
@@ -219,37 +313,38 @@ abstract contract UTSBase is IUTSBase, ERC165 {
     }
 
     /**
-     * @notice Returns the UTSRouter {_router} address
-     * @return routerAddress UTSRouter address
+     * @notice Returns the UTSRouter {_router} address.
+     * @return routerAddress the {UTSRouter} address.
      */
     function router() public view returns(address routerAddress) {
         return _router;
     }
 
     /**
-     * @notice Returns the UTSBase {protocolVersion}
-     * @return UTSBase protocol version
+     * @notice Returns the UTSBase protocol version.
+     * @return UTS protocol version.
      */
     function protocolVersion() public pure virtual returns(bytes2) {
         return 0x0101;
     }
 
     /**
-     * @notice Returns the {underlyingToken} ERC20 address
-     * @return Underlying ERC20 token address
+     * @notice Returns the underlying ERC20 token address.
+     * @return ERC20 {_underlyingToken} address.
      */
     function underlyingToken() public view virtual returns(address) {
         return _underlyingToken;
     }
 
     /**
-     * @notice Returns whether failed execution's data is stored 
-     * @param to tokens receiver
-     * @param amount amount to receive
-     * @param customPayload user's additional data
-     * @param origin source chain settings
-     * @param nonce unique failed execution's counter
-     * @return Result
+     * @notice Returns whether failed execution's data is stored. 
+     * @param to tokens receiver on the current chain.
+     * @param amount amount to receive.
+     * @param customPayload user's additional data.
+     * @param origin source chain data.
+     * @dev See the {UTSERC20DataTypes.Origin} for details.
+     * @param nonce unique failed execution's counter.
+     * @return isFailed result.
      */
     function isExecutionFailed(
         address to, 
@@ -257,19 +352,19 @@ abstract contract UTSBase is IUTSBase, ERC165 {
         bytes calldata customPayload, 
         Origin calldata origin,
         uint256 nonce
-    ) external view virtual returns(bool) {
+    ) external view virtual returns(bool isFailed) {
         if (to == address(0)) return false;
         return _failedExecution[keccak256(abi.encode(to, amount, customPayload, origin, nonce))] == to;
     }
 
     /**
-     * @notice Returns estimated minimal amount to pay for bridging and minimal gas limit
-     * @param dstChainId destination chain Id
-     * @param dstGasLimit {redeem} call gas limit
-     * @param customPayloadLength user's additional data length
-     * @param protocolPayload protocol's additional data
-     * @return paymentAmount source chain native coin amount to pay for bridging
-     * @return dstMinGasLimit destination chain minimal gas limit 
+     * @notice Returns estimated minimal amount to pay for bridging and minimal gas limit.
+     * @param dstChainId destination chain Id.
+     * @param dstGasLimit {redeem} call gas limit on the destination chain.
+     * @param customPayloadLength user's additional data length.
+     * @param protocolPayload UTS protocol's additional data.
+     * @return paymentAmount source chain native currency amount to pay for bridging.
+     * @return dstMinGasLimit destination chain minimal {redeem} call gas limit.
      */
     function estimateBridgeFee(
         uint256 dstChainId, 
@@ -287,19 +382,46 @@ abstract contract UTSBase is IUTSBase, ERC165 {
     }
 
     /**
-     * @notice Returns configs for bridge/redeem functions 
-     * @param chainIds destination chain Ids
-     * @return configs {_chainConfig} array
+     * @notice Returns destination chain configs for sending and receiving crosschain messages.
+     * @param chainIds destination chain Ids.
+     * @return configs array of {ChainConfig} settings for provided {chainIds}.
+     * @dev See the {UTSERC20DataTypes.ChainConfig} for details.
      */
     function getChainConfigs(uint256[] calldata chainIds) external view returns(ChainConfig[] memory configs) {
         configs = new ChainConfig[](chainIds.length);
         for (uint256 i; chainIds.length > i; ++i) configs[i] = _chainConfig[chainIds[i]];
     }
 
+    /**
+     * @notice Returns true if this contract implements the interface defined by `interfaceId`.
+     * See the corresponding
+     * https://eips.ethereum.org/EIPS/eip-165#how-interfaces-are-identified
+     * to learn more about how these ids are created.
+     */
     function supportsInterface(bytes4 interfaceId) public view virtual override returns(bool) {
         return interfaceId == type(IUTSBase).interfaceId || super.supportsInterface(interfaceId);
     }
 
+    /**
+     * @notice Internal function that initiates the tokens bridging.
+     * @param spender transaction sender, must be {msg.sender}.
+     * @param from tokens holder on the current chain.
+     * @param to bridged tokens receiver on the destination chain.
+     * @param amount tokens amount to bridge to the destination chain.
+     * @param dstChainId destination chain Id.
+     * @param dstGasLimit {redeem} call gas limit on the destination chain.
+     * @param customPayload user's additional data.
+     * @param protocolPayload UTS protocol's additional data.
+     *
+     * @return success call result.
+     * @return bridgedAmount bridged tokens amount.
+     *
+     * @dev Implements all basic checks and calculations, containing:
+     *      1. required destination gas limit check
+     *      2. destination peer is not paused check
+     *      3. amount conversion in accordance with destination token decimals
+     *      4. bridged tokens amount is not zero check
+     */
     function _bridge(
         address spender,
         address from,
@@ -349,6 +471,23 @@ abstract contract UTSBase is IUTSBase, ERC165 {
         );
     }
 
+    /**
+     * @notice Internal function that call {_router} contract to send crosschain bridge message.
+     * @param payment the native currency amount that will be transfer to the {_router} as payment for sending this message.
+     * @param dstToken the contract address on the {dstChainId} that will receive this message.
+     * @param to bridged tokens receiver on the destination chain.
+     * @param amount amount that {to} address will receive (before decimals conversion on the destination chain).
+     * @param srcDecimals source ERC20 underlying token decimals.
+     * @param dstChainId destination chain Id.
+     * @param dstGasLimit {redeem} call gas limit on the destination chain.
+     * @param customPayload user's additional data.
+     * @param protocolPayload UTS protocol's additional data.
+     *
+     * @return success call result.
+     *
+     * @dev {customPayload} can be used to send an additional data, it will be sent to the {dstToken} contract on the 
+     * destination chain in accordance with {redeem} function.
+     */
     function _sendRequest(
         uint256 payment,
         bytes memory dstToken,
@@ -373,6 +512,21 @@ abstract contract UTSBase is IUTSBase, ERC165 {
         );
     }
 
+    /**
+     * @notice Internal function that releases tokens to receiver by crosschain message from the source chain.
+     * @param to bridged tokens receiver on the current chain.
+     * @param amount amount that {to} address will receive (before decimals conversion on the current chain).
+     * @param customPayload user's additional data.
+     * @param origin source chain data.
+     * @dev See the {UTSERC20DataTypes.Origin} for details.
+     * @return success call result.
+     *
+     * @dev Implements all basic checks and calculations, containing:
+     *      1. receiver address is not zero address check
+     *      2. source peer address is allowed to send messages to this contract check
+     *      3. source peer address is not paused check
+     *      4. amount conversion in accordance with source token decimals
+     */
     function _redeem(
         address to,
         uint256 amount,
@@ -393,6 +547,12 @@ abstract contract UTSBase is IUTSBase, ERC165 {
         return true;
     }
 
+    /**
+     * @notice Internal function that sets the destination chains settings and emits corresponding event.
+     * @param allowedChainIds chains Ids available for bridging in both directions.
+     * @param chainConfigs array of {ChainConfig} settings for provided {allowedChainIds}.
+     * @dev See the {UTSERC20DataTypes.ChainConfig} for details.
+     */
     function _setChainConfig(uint256[] memory allowedChainIds, ChainConfig[] memory chainConfigs) internal virtual {
         if (allowedChainIds.length != chainConfigs.length) revert UTSBase__E4();
         for (uint256 i; allowedChainIds.length > i; ++i) _chainConfig[allowedChainIds[i]] = chainConfigs[i];
@@ -400,18 +560,31 @@ abstract contract UTSBase is IUTSBase, ERC165 {
         emit ChainConfigUpdated(msg.sender, allowedChainIds, chainConfigs);
     }
 
+    /**
+     * @notice Internal function that sets the UTSRouter address and emits corresponding event.
+     * @param newRouter new {_router} address.
+     */
     function _setRouter(address newRouter) internal virtual {
         _router = newRouter;
 
         emit RouterSet(msg.sender, newRouter);
     }
 
+    /**
+     * @notice Internal view function that implement basic access check for {redeem} and {storeFailedExecution} functions.
+     */
     function _onlyRouter() internal view {
         if (msg.sender != _router) revert UTSBase__E1();
     }
 
+    /**
+     * @dev The function MUST be overridden to include access restriction to the {setRouter} and {setChainConfig} functions.
+     */
     function _authorizeCall() internal virtual;
 
+    /**
+     * @dev The function MUST be overridden to implement {mint}/{transfer} underlying tokens to receiver {to} address by {_router}.
+     */
     function _mintTo(
         address to,
         uint256 amount,
@@ -419,6 +592,16 @@ abstract contract UTSBase is IUTSBase, ERC165 {
         Origin memory origin
     ) internal virtual returns(uint256);
 
+    /**
+     * @dev The function MUST be overridden to implement {burn}/{transferFrom} underlying tokens from {spender}/{from} 
+     * address for bridging.
+     *
+     * IMPORTANT: If this contract IS a token itself, and the {spender} and {from} addresses are different, an {ERC20.allowance} 
+     * check MUST be added.
+     *
+     * IMPORTANT: If this contract IS NOT a token itself, the {spender} and {from} addresses MUST be the same to prevent tokens
+     * stealing via third-party allowances.
+     */
     function _burnFrom(
         address spender,
         address from,

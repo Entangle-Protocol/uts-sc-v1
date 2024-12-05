@@ -8,7 +8,7 @@ interface IUTSBaseExtended {
     function setChainConfigToDestination(
         uint256[] calldata dstChainIds,
         ChainConfigUpdate[] calldata newConfigs
-    ) external payable returns(bool);
+    ) external payable returns(bool success);
 
     function setChainConfigByRouter(
         uint256[] calldata allowedChainIds,
