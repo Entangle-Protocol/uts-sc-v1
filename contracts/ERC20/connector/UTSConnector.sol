@@ -45,14 +45,14 @@ contract UTSConnector is IUTSConnector, UTSBaseIndexed, AccessControl {
 
     /**
      * @notice Returns decimals value of the underlying ERC20 token.
-     * @return {decimals} of the {_underlyingToken}.
+     * @return {ERC20.decimals} of the {_underlyingToken}.
      */
     function underlyingDecimals() external view returns(uint8) {
         return _decimals;
     }
 
     /**
-     * @notice Returns the balance of the underlying token token held by the UTSConnector.
+     * @notice Returns the balance of the underlying ERC20 token held by the UTSConnector.
      * @return {_underlyingToken} balance held by the {UTSConnector}.
      */
     function underlyingBalance() external view returns(uint256) {

@@ -5,15 +5,15 @@ import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol"
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 
-import "contracts/libraries/UTSERC20DataTypes.sol";
-import "contracts/libraries/UTSCoreDataTypes.sol";
-import "contracts/libraries/AddressConverter.sol";
-import "contracts/libraries/SafeCall.sol";
+import "../libraries/UTSERC20DataTypes.sol";
+import "../libraries/UTSCoreDataTypes.sol";
+import "../libraries/AddressConverter.sol";
+import "../libraries/SafeCall.sol";
 
 import "./interfaces/IUTSBaseExtended.sol";
 import "./interfaces/IUTSRouter.sol";
-import "contracts/interfaces/IUTSPriceFeed.sol";
-import "contracts/interfaces/IUTSMasterRouter.sol";
+import "../interfaces/IUTSPriceFeed.sol";
+import "../interfaces/IUTSMasterRouter.sol";
 
 /**
  * @notice A contract manages the sending and receiving of bridge crosschain messages for UTSTokens and UTSConnectors 
@@ -50,10 +50,13 @@ contract UTSRouter is IUTSRouter, AccessControlUpgradeable, PausableUpgradeable,
     /// @notice Address of the {UTSPriceFeed} contract.
     address public immutable PRICE_FEED;
 
-    /// @notice The amount of gas required to execute {storeFailedExecution} function.
+    /// @notice The amount of gas required to execute {IUTSBase.storeFailedExecution} function.
     uint64 private immutable STORE_GAS_LIMIT;
 
-    /// @notice The amount of gas per one {ChainConfig} required to execute {setChainConfigByRouter} function.
+    /// @notice The amount of gas required to execute {execute} function without {IUTSBase.redeem} call.
+    uint64 private immutable SERVICE_GAS;
+
+    /// @notice The amount of gas per one {ChainConfig} required to execute {IUTSBase.setChainConfigByRouter} function.
     uint64 private immutable UPDATE_GAS_LIMIT;
 
     /// @notice The gas limit for payment native currency transfer by low level {call} function.
@@ -122,6 +125,7 @@ contract UTSRouter is IUTSRouter, AccessControlUpgradeable, PausableUpgradeable,
      * @param masterRouter address of the {UTSMasterRouter} contract.
      * @param priceFeed address of the {UTSPriceFeed} contract.
      * @param storeGasLimit amount of gas required to execute {storeFailedExecution} function.
+     * @param serviceGas amount of gas required to execute {execute} function without {IUTSBase.redeem} call.
      * @param updateGasLimit amount of gas required to execute {setChainConfigByRouter} function.
      * @param paymentTransferGasLimit gas limit for payment native currency transfer by low level {call} function.
      *
@@ -131,6 +135,7 @@ contract UTSRouter is IUTSRouter, AccessControlUpgradeable, PausableUpgradeable,
         address masterRouter, 
         address priceFeed,
         uint64 storeGasLimit,
+        uint64 serviceGas,
         uint64 updateGasLimit,
         uint16 paymentTransferGasLimit
     ) {
@@ -139,6 +144,7 @@ contract UTSRouter is IUTSRouter, AccessControlUpgradeable, PausableUpgradeable,
         MASTER_ROUTER = masterRouter;
         PRICE_FEED = priceFeed;
         STORE_GAS_LIMIT = storeGasLimit;
+        SERVICE_GAS = serviceGas;
         UPDATE_GAS_LIMIT = updateGasLimit;
         PAYMENT_TRANSFER_GAS_LIMIT = paymentTransferGasLimit;
     }
@@ -477,7 +483,7 @@ contract UTSRouter is IUTSRouter, AccessControlUpgradeable, PausableUpgradeable,
             decimals: _srcDecimals
         });
 
-        if (_gasLimit > STORE_GAS_LIMIT) _gasLimit -= STORE_GAS_LIMIT;
+        _gasLimit = _gasLimit > STORE_GAS_LIMIT + SERVICE_GAS ? _gasLimit - STORE_GAS_LIMIT - SERVICE_GAS : 0;
 
         (bool _redeemResult, bytes memory _redeemResponse) = peerAddress.safeCall(
             _gasLimit,

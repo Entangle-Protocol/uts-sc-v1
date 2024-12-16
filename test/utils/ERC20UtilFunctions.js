@@ -580,6 +580,15 @@ async function deployTokenByFactory(
         )).to.be.revertedWithCustomError(deployedToken, "UTSBase__E6");
     }
 
+    const estimatedGasLimit = await deployedToken.estimateBridgeFee(
+        allowedChainId,
+        0,
+        0,
+        "0x"
+    );
+
+    const minGasLimit = estimatedGasLimit[1];
+
     await expect(deployedToken.connect(owner).initializeToken([
         ownerAddress,
         "",
@@ -675,7 +684,7 @@ async function deployTokenByFactory(
             zeroAddress,
             tokenAmountToBridge,
             allowedChainIdTwo[0],
-            configMinGasLimit,
+            minGasLimit,
             "0x",
             "0x",
             { value: configMinGasLimit }
@@ -686,7 +695,7 @@ async function deployTokenByFactory(
             "0x",
             tokenAmountToBridge,
             allowedChainIdTwo[0],
-            configMinGasLimit,
+            minGasLimit,
             "0x",
             "0x",
             { value: configMinGasLimit }
@@ -697,7 +706,7 @@ async function deployTokenByFactory(
             ownerAddress,
             tokenAmountToBridge,
             31338,
-            configMinGasLimit,
+            minGasLimit,
             "0x",
             "0x",
             { value: configMinGasLimit }
@@ -735,7 +744,7 @@ async function deployTokenByFactory(
             owner.address,
             tokenAmountToBridge,
             allowedChainIdFive[0],
-            configMinGasLimit,
+            minGasLimit,
             "0x",
             "0x",
             { value: configMinGasLimit }
@@ -1025,12 +1034,20 @@ async function deployConnectorByFactory(
 
     await underlyingToken.connect(owner).approve(deployedConnector.target, tokenAmountToBridge);
 
+    const estimatedGasLimit = await deployedConnector.estimateBridgeFee(
+        allowedChainId,
+        0,
+        0,
+        "0x"
+    );
+    const minGasLimit = estimatedGasLimit[1];
+
     await expect(deployedConnector.connect(owner).bridge(
         owner.address,
         zeroAddress,
         tokenAmountToBridge,
         allowedChainId,
-        configMinGasLimit,
+        minGasLimit,
         "0x",
         "0x",
         { value: configMinGasLimit }
@@ -1041,7 +1058,7 @@ async function deployConnectorByFactory(
         "0x",
         tokenAmountToBridge,
         allowedChainId,
-        configMinGasLimit,
+        minGasLimit,
         "0x",
         "0x",
         { value: configMinGasLimit }
@@ -1052,7 +1069,7 @@ async function deployConnectorByFactory(
         owner.address,
         tokenAmountToBridge,
         allowedChainIdFour[0],
-        configMinGasLimit,
+        minGasLimit,
         "0x",
         "0x",
         { value: configMinGasLimit }
@@ -1090,7 +1107,7 @@ async function deployConnectorByFactory(
         owner.address,
         tokenAmountToBridge,
         allowedChainIdFive[0],
-        configMinGasLimit,
+        minGasLimit,
         "0x",
         "0x",
         { value: configMinGasLimit }

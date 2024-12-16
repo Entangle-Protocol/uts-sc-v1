@@ -297,15 +297,18 @@ describe("UTS MasterRouter", function () {
 
             const tokenAmountToBridge = await deployedToken.balanceOf(user);
 
+            const estimateValues = await deployedToken.estimateBridgeFee(allowedChainIds[0], 0n, 0n, "0x");
+            const gasLimit = estimateValues[1];
+
             await deployedToken.connect(user).bridge(
                 user.address,
                 configPeer,
                 tokenAmountToBridge,
                 allowedChainIds[0],
-                configMinGasLimit,
+                gasLimit,
                 "0x",
                 "0x",
-                { value: baseFeePerGasInWei * configMinGasLimit }
+                { value: baseFeePerGasInWei * gasLimit }
             );
         });
 
@@ -545,7 +548,7 @@ describe("UTS MasterRouter", function () {
                 allowedChainIds[0],
                 invalidConfigPeer,
                 configDecimals,
-                25000n,
+                165001n,
                 "0x"
             );
 

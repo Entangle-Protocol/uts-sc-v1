@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.24;
 
-import "contracts/libraries/UTSERC20DataTypes.sol";
+import "../../libraries/UTSERC20DataTypes.sol";
 
 interface IUTSFactory {
 

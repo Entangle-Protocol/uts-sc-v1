@@ -6,17 +6,17 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
-import "contracts/libraries/AddressConverter.sol";
-import "contracts/libraries/UTSCoreDataTypes.sol";
-import "contracts/libraries/UTSERC20DataTypes.sol";
-import "contracts/libraries/DecimalsConverter.sol";
+import "../libraries/AddressConverter.sol";
+import "../libraries/UTSCoreDataTypes.sol";
+import "../libraries/UTSERC20DataTypes.sol";
+import "../libraries/DecimalsConverter.sol";
 
 import "./interfaces/IUTSFactory.sol";
 import "./interfaces/IUTSDeploymentRouter.sol";
-import "contracts/interfaces/IPausable.sol";
-import "contracts/interfaces/IUTSRegistry.sol";
-import "contracts/interfaces/IUTSPriceFeed.sol";
-import "contracts/interfaces/IUTSMasterRouter.sol";
+import "../interfaces/IPausable.sol";
+import "../interfaces/IUTSRegistry.sol";
+import "../interfaces/IUTSPriceFeed.sol";
+import "../interfaces/IUTSMasterRouter.sol";
 
 /**
  * @notice A contract manages the sending and receiving of crosschain deployment requests for UTSTokens and 
@@ -72,6 +72,9 @@ contract UTSDeploymentRouter is IUTSDeploymentRouter, AccessControlUpgradeable, 
     /// @notice The gas limit for payment native currency transfer by low level {call} function.
     uint16 private immutable PAYMENT_TRANSFER_GAS_LIMIT;
 
+    /// @notice The maximum number of chains on which crosschain deployment is available.
+    uint8 private immutable AVAILABLE_CHAINS_NUMBER; 
+
     /// @custom:storage-location erc7201:UTSProtocol.storage.UTSDeploymentRouter.Main
     struct Main {
         mapping(uint256 chainId => DstDeployConfig) _dstDeployConfig;
@@ -100,6 +103,9 @@ contract UTSDeploymentRouter is IUTSDeploymentRouter, AccessControlUpgradeable, 
 
     /// @notice Indicates an error that the provided {DeployTokenData.mintedAmountToOwner} exceeds the {DeployTokenData.initialSupply}.
     error UTSDeploymentRouter__E6();
+
+    /// @notice Indicates an error that the provided {DeployMetadata.params.allowedChainIds} exceeds the {AVAILABLE_CHAINS_NUMBER}.
+    error UTSDeploymentRouter__E7();
 
     /**
      * @notice Emitted when the {DstDeployConfig.factory} is updated.
@@ -143,6 +149,7 @@ contract UTSDeploymentRouter is IUTSDeploymentRouter, AccessControlUpgradeable, 
      * @param paymentTokenDecimals {PAYMENT_TOKEN} decimals.
      * @param nativeTokenDecimals native currency decimals.
      * @param paymentTransferGasLimit gas limit for payment native currency transfer by low level {call} function.
+     * @param availableChainsNumber maximum number of chains on which crosschain deployment is available.
      *
      * @custom:oz-upgrades-unsafe-allow constructor
      */ 
@@ -154,7 +161,8 @@ contract UTSDeploymentRouter is IUTSDeploymentRouter, AccessControlUpgradeable, 
         address paymentToken,
         uint8 paymentTokenDecimals,
         uint8 nativeTokenDecimals,
-        uint16 paymentTransferGasLimit
+        uint16 paymentTransferGasLimit,
+        uint8 availableChainsNumber
     ) {
         _disableInitializers();
 
@@ -166,6 +174,7 @@ contract UTSDeploymentRouter is IUTSDeploymentRouter, AccessControlUpgradeable, 
         PAYMENT_TOKEN_DECIMALS = paymentTokenDecimals;
         NATIVE_TOKEN_DECIMALS = nativeTokenDecimals;
         PAYMENT_TRANSFER_GAS_LIMIT = paymentTransferGasLimit;
+        AVAILABLE_CHAINS_NUMBER = availableChainsNumber;
     }
 
     /**
@@ -210,10 +219,12 @@ contract UTSDeploymentRouter is IUTSDeploymentRouter, AccessControlUpgradeable, 
                     DeployConnectorData memory _params = abi.decode(deployMetadata[i].params, (DeployConnectorData));
 
                     if (_params.allowedChainIds.length != _params.chainConfigs.length) revert UTSDeploymentRouter__E3();
+                    if (_params.allowedChainIds.length > AVAILABLE_CHAINS_NUMBER) revert UTSDeploymentRouter__E7();
                 } else {
                     DeployTokenData memory _params = abi.decode(deployMetadata[i].params, (DeployTokenData));
 
                     if (_params.allowedChainIds.length != _params.chainConfigs.length) revert UTSDeploymentRouter__E3();
+                    if (_params.allowedChainIds.length > AVAILABLE_CHAINS_NUMBER) revert UTSDeploymentRouter__E7();
 
                     if (_params.pureToken) {
                         if (_params.mintable || _params.globalBurnable || _params.onlyRoleBurnable || _params.feeModule) {

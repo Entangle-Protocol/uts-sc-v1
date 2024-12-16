@@ -422,20 +422,22 @@ describe("UTS Router", function () {
             const tokenAmountToBridge = 1000n;
             const etherTokenBalanceBefore = await ethers.provider.getBalance(justToken.target);
             const etherRouterBalanceBefore = await ethers.provider.getBalance(router.target);
+            const estimateValues = await deployedToken.estimateBridgeFee(allowedChainIds[0], 0n, 0n, "0x");
+            const gasLimit = estimateValues[1];
 
             await deployedToken.connect(user).bridge(
                 user.address,
                 user.address,
                 tokenAmountToBridge,
                 allowedChainIds[0],
-                configMinGasLimit,
+                gasLimit,
                 "0x",
                 "0x",
-                { value: baseFeePerGasInWei * configMinGasLimit }
+                { value: baseFeePerGasInWei * gasLimit }
             );
 
             expect(etherTokenBalanceBefore).to.equal(await ethers.provider.getBalance(justToken.target));
-            expect(etherRouterBalanceBefore + baseFeePerGasInWei * configMinGasLimit).to.equal(await ethers.provider.getBalance(router.target));
+            expect(etherRouterBalanceBefore + baseFeePerGasInWei * gasLimit).to.equal(await ethers.provider.getBalance(router.target));
             expect(await deployedToken.balanceOf(user) + tokenAmountToBridge).to.equal(tokenBalanceBefore);
         });
 
@@ -487,16 +489,18 @@ describe("UTS Router", function () {
             const tokenAmountToBridge = 1000n;
             const etherTokenBalanceBefore = await ethers.provider.getBalance(justToken.target);
             const etherRouterBalanceBefore = await ethers.provider.getBalance(router.target);
+            const estimateValues = await deployedToken.estimateBridgeFee(allowedChainIds[0], 0n, 0n, "0x");
+            const gasLimit = estimateValues[1];
 
             await deployedToken.connect(user).bridge(
                 user.address,
                 user.address,
                 tokenAmountToBridge,
                 allowedChainIds[0],
-                configMinGasLimit,
+                gasLimit,
                 "0x",
                 "0x",
-                { value: baseFeePerGasInWei * configMinGasLimit }
+                { value: baseFeePerGasInWei * gasLimit }
             );
 
             const etherTokenBalanceAfter = await ethers.provider.getBalance(justToken.target);
@@ -504,7 +508,7 @@ describe("UTS Router", function () {
             const etherCollectorBalanceAfter = await ethers.provider.getBalance(feeCollector);
 
             expect(etherTokenBalanceBefore).to.equal(etherTokenBalanceAfter);
-            expect(etherRouterBalanceBefore + baseFeePerGasInWei * configMinGasLimit).to.equal(etherRouterBalanceAfter);
+            expect(etherRouterBalanceBefore + baseFeePerGasInWei * gasLimit).to.equal(etherRouterBalanceAfter);
             expect(await deployedToken.balanceOf(user) + tokenAmountToBridge).to.equal(tokenBalanceBefore);
 
             await masterRouter.connect(admin).setFeeCollector(feeCollector);
@@ -515,7 +519,7 @@ describe("UTS Router", function () {
                 user.address,
                 tokenAmountToBridge,
                 allowedChainIds[0],
-                configMinGasLimit,
+                gasLimit,
                 "0x",
                 "0x",
                 { value: 1 }
@@ -526,15 +530,15 @@ describe("UTS Router", function () {
                 user.address,
                 tokenAmountToBridge,
                 allowedChainIds[0],
-                configMinGasLimit,
+                gasLimit,
                 "0x",
                 "0x",
-                { value: baseFeePerGasInWei * configMinGasLimit }
+                { value: baseFeePerGasInWei * gasLimit }
             );
 
             expect(etherTokenBalanceBefore).to.equal(await ethers.provider.getBalance(justToken.target));
-            expect(etherRouterBalanceAfter - baseFeePerGasInWei * configMinGasLimit).to.equal(await ethers.provider.getBalance(router.target));
-            expect(etherCollectorBalanceAfter + 2n * (baseFeePerGasInWei * configMinGasLimit)).to.equal(await ethers.provider.getBalance(feeCollector));
+            expect(etherRouterBalanceAfter - baseFeePerGasInWei * gasLimit).to.equal(await ethers.provider.getBalance(router.target));
+            expect(etherCollectorBalanceAfter + 2n * (baseFeePerGasInWei * gasLimit)).to.equal(await ethers.provider.getBalance(feeCollector));
         });
     });
 
@@ -892,15 +896,18 @@ describe("UTS Router", function () {
                 adminRole
             );
 
+            const estimateValues = await deployedToken.estimateBridgeFee(allowedChainIds[0], 0n, 0n, "0x");
+            const gasLimit = estimateValues[1];
+
             await expect(deployedToken.connect(user).bridge(
                 user.address,
                 user.address,
                 withDecimals("1"),
                 allowedChainIds[0],
-                configMinGasLimit,
+                gasLimit,
                 "0x",
                 "0x",
-                { value: baseFeePerGasInWei * configMinGasLimit - 1n }
+                { value: baseFeePerGasInWei * gasLimit - 1n }
             )).to.be.revertedWithCustomError(router, "UTSRouter__E0");
         });
 

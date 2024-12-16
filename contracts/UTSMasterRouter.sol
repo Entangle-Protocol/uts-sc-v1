@@ -173,8 +173,8 @@ contract UTSMasterRouter is IUTSMasterRouter, AccessControlUpgradeable, Pausable
         (
             address _dstPeerAddress, 
             address _router, 
-            OperationResult _opResult
-        ) = (_dstPeer.toAddress(), address(0), OperationResult.Success);
+            uint8 _opResult
+        ) = (_dstPeer.toAddress(), address(0), uint8(OperationResult.Success));
 
         (
             bool _getRouterResult,
@@ -191,21 +191,21 @@ contract UTSMasterRouter is IUTSMasterRouter, AccessControlUpgradeable, Pausable
                     );
 
                     if (_executeResult && _executeResponse.length > 0) {
-                        _opResult = OperationResult(abi.decode(_executeResponse, (uint8)));
+                        _opResult = abi.decode(_executeResponse, (uint8));
                     } else {
-                        _opResult = OperationResult.IncompatibleRouter;
+                        _opResult = uint8(OperationResult.IncompatibleRouter);
                     }
                 } else {
-                    _opResult = OperationResult.UnauthorizedRouter;
+                    _opResult = uint8(OperationResult.UnauthorizedRouter);
                 }
             } else {
-                _opResult = OperationResult.MasterRouterPaused;
+                _opResult = uint8(OperationResult.MasterRouterPaused);
             }
         } else {
-            _opResult = OperationResult.InvalidDstPeerAddress;
+            _opResult = uint8(OperationResult.InvalidDstPeerAddress);
         }
 
-        emit ProposalExecuted(uint8(_opResult), _dstPeerAddress, _router, _params, _srcChainId, _srcOpTxId);
+        emit ProposalExecuted(_opResult, _dstPeerAddress, _router, _params, _srcChainId, _srcOpTxId);
     }
 
     /**

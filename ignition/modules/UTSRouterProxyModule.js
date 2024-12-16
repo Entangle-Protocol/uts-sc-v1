@@ -6,10 +6,11 @@ module.exports = buildModule("UTSRouterProxyModule", (m) => {
     const masterRouterAddress = m.getParameter("masterRouterAddress");
     const priceFeedAddress = m.getParameter("priceFeedAddress");
     const storeGasLimit = m.getParameter("storeGasLimit");
+    const serviceGas = m.getParameter("serviceGas");
     const updateGasLimit = m.getParameter("updateGasLimit");
     const paymentTransferGasLimit = m.getParameter("paymentTransferGasLimit");
 
-    const routerImplementation = m.contract("UTSRouter", [masterRouterAddress, priceFeedAddress, storeGasLimit, updateGasLimit, paymentTransferGasLimit]);
+    const routerImplementation = m.contract("UTSRouter", [masterRouterAddress, priceFeedAddress, storeGasLimit, serviceGas, updateGasLimit, paymentTransferGasLimit]);
 
     const routerProxy = m.contract('ERC1967Proxy', [routerImplementation, initializeCalldata]);
 

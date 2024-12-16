@@ -824,23 +824,23 @@ describe("UTS Base", function () {
 
             expect(estimateValues[1]).to.equal(await router.dstMinGasLimit(allowedChainIds[0]));
 
-            const bridgePayment = await router.getBridgeFee(allowedChainIds[0], configMinGasLimit, 0n, "0x");
+            const bridgePayment = await router.getBridgeFee(allowedChainIds[0], estimateValues[1], 0n, "0x");
 
             await deployedToken.connect(user).bridge(
                 user.address,
                 user.address,
                 tokenAmountToBridge,
                 allowedChainIds[0],
-                configMinGasLimit,
+                estimateValues[1],
                 "0x",
                 "0x",
-                { value: baseFeePerGasInWei * configMinGasLimit }
+                { value: baseFeePerGasInWei * estimateValues[1] }
             );
 
-            expect(etherBalanceBefore + baseFeePerGasInWei * configMinGasLimit).to.equal(await ethers.provider.getBalance(feeCollector));
+            expect(etherBalanceBefore + baseFeePerGasInWei * estimateValues[1]).to.equal(await ethers.provider.getBalance(feeCollector));
             expect(await deployedToken.balanceOf(user) + tokenAmountToBridge).to.equal(tokenBalanceBefore);
-            expect(estimateValues[0]).to.equal(bridgePayment);
-            expect(etherBalanceBefore + estimateValues[0]).to.equal(await ethers.provider.getBalance(feeCollector));
+            expect(baseFeePerGasInWei * estimateValues[1]).to.equal(bridgePayment);
+            expect(etherBalanceBefore + bridgePayment).to.equal(await ethers.provider.getBalance(feeCollector));
         });
 
         it("Token bridge from zero address", async function () {
@@ -936,6 +936,9 @@ describe("UTS Base", function () {
             const tokenBalanceBefore = await justToken.balanceOf(admin);
             const connectorBalanceBefore = await justToken.balanceOf(deployedConnector.target);
             const tokenAmountToBridge = 1000n;
+            const estimateValues = await deployedConnector.estimateBridgeFee(allowedChainIds[0], configMinGasLimit, 0n, "0x");
+
+            expect(estimateValues[1]).to.equal(await router.dstMinGasLimit(allowedChainIds[0]));
 
             await justToken.connect(admin).approve(deployedConnector.target, tokenAmountToBridge);
             const etherBalanceBefore = await ethers.provider.getBalance(feeCollector);
@@ -945,13 +948,13 @@ describe("UTS Base", function () {
                 admin.address,
                 tokenAmountToBridge,
                 allowedChainIds[0],
-                configMinGasLimit,
+                estimateValues[1],
                 "0x",
                 "0x",
-                { value: baseFeePerGasInWei * configMinGasLimit }
+                { value: baseFeePerGasInWei * estimateValues[1] }
             );
 
-            expect(etherBalanceBefore + baseFeePerGasInWei * configMinGasLimit).to.equal(await ethers.provider.getBalance(feeCollector));
+            expect(etherBalanceBefore + baseFeePerGasInWei * estimateValues[1]).to.equal(await ethers.provider.getBalance(feeCollector));
             expect(await justToken.balanceOf(admin) + tokenAmountToBridge).to.equal(tokenBalanceBefore);
             expect(await justToken.balanceOf(deployedConnector.target) - tokenAmountToBridge).to.equal(connectorBalanceBefore);
         });
@@ -1001,7 +1004,8 @@ describe("UTS Base", function () {
 
             const amountToRedeem = withDecimals("1500");
             const amountToReceive = await convert(amountToRedeem, configDecimals, decimals);
-            const gasLimit = 175000n;
+            const estimateValues = await deployedToken.estimateBridgeFee(allowedChainIds[0], 0n, 0n, "0x");
+            const gasLimit = estimateValues[1] + 50000n;
 
             const params = await encodeParamsToRedeem(
                 user,
@@ -1097,7 +1101,7 @@ describe("UTS Base", function () {
             );
 
             const amountToRedeem = withDecimals("1500");
-            const gasLimit = 45001n;
+            const gasLimit = 165001n;
 
             const params = await encodeParamsToRedeem(
                 user,
@@ -1161,7 +1165,7 @@ describe("UTS Base", function () {
             const configDecimals = 18n;
 
             const amountToRedeem = withDecimals("1500");
-            const gasLimit = 84000n;
+            const gasLimit = 204000n;
 
             const params = await encodeParamsToRedeem(
                 user,
@@ -2640,16 +2644,18 @@ describe("UTS Token", function () {
             const userBalanceBefore = await deployedToken.balanceOf(user);
             const executorBalanceBefore = await deployedToken.balanceOf(executor);
             const totalSupplyBefore = await deployedToken.totalSupply();
+            const estimateValues = await deployedToken.estimateBridgeFee(allowedChainIds[0], 0n, 0n, "0x");
+            const gasLimit = estimateValues[1];
 
             await deployedToken.connect(executor).bridge(
                 user.address,
                 executor.address,
                 amountToBridge,
                 allowedChainIds[0],
-                configMinGasLimit,
+                gasLimit,
                 "0x",
                 "0x",
-                { value: baseFeePerGasInWei * configMinGasLimit }
+                { value: baseFeePerGasInWei * gasLimit }
             );
 
             expect(userBalanceBefore - amountToBridge).to.equal(await deployedToken.balanceOf(user));
@@ -2767,16 +2773,18 @@ describe("UTS Token", function () {
 
             const userBalanceBeforeBridge = await deployedToken.balanceOf(user);
             const totalSupplyBeforeBridge = await deployedToken.totalSupply();
+            const estimateValues = await deployedToken.estimateBridgeFee(allowedChainIds[0], 0n, 0n, "0x");
+            const gasLimit = estimateValues[1];
 
             await deployedToken.connect(user).bridge(
                 user.address,
                 user.address,
                 amountToBridge,
                 allowedChainIds[0],
-                configMinGasLimit,
+                gasLimit,
                 "0x",
                 "0x",
-                { value: baseFeePerGasInWei * configMinGasLimit }
+                { value: baseFeePerGasInWei * gasLimit }
             );
 
             expect(userBalanceBeforeBridge - amountToBridge).to.equal(await deployedToken.balanceOf(user));
@@ -2861,16 +2869,18 @@ describe("UTS Token", function () {
 
             const userBalanceBeforeBridge = await deployedToken.balanceOf(user);
             const totalSupplyBeforeBridge = await deployedToken.totalSupply();
+            const estimateValues = await deployedToken.estimateBridgeFee(allowedChainIds[0], 0n, 0n, "0x");
+            const gasLimit = estimateValues[1];
 
             await deployedToken.connect(user).bridge(
                 user.address,
                 user.address,
                 amountToBridge,
                 allowedChainIds[0],
-                configMinGasLimit,
+                gasLimit,
                 "0x",
                 "0x",
-                { value: baseFeePerGasInWei * configMinGasLimit }
+                { value: baseFeePerGasInWei * gasLimit }
             );
 
             expect(userBalanceBeforeBridge - amountToBridge).to.equal(await deployedToken.balanceOf(user));
@@ -2959,16 +2969,18 @@ describe("UTS Token", function () {
 
             const userBalanceBeforeBridge = await deployedToken.balanceOf(user);
             const totalSupplyBeforeBridge = await deployedToken.totalSupply();
+            const estimateValues = await deployedToken.estimateBridgeFee(allowedChainIds[0], 0n, 0n, "0x");
+            const gasLimit = estimateValues[1];
 
             await deployedToken.connect(user).bridge(
                 user.address,
                 user.address,
                 amountToBridge,
                 allowedChainIds[0],
-                configMinGasLimit,
+                gasLimit,
                 "0x",
                 "0x",
-                { value: baseFeePerGasInWei * configMinGasLimit }
+                { value: baseFeePerGasInWei * gasLimit }
             );
 
             expect(userBalanceBeforeBridge - amountToBridge).to.equal(await deployedToken.balanceOf(user));
@@ -3056,16 +3068,18 @@ describe("UTS Token", function () {
 
             const userBalanceBeforeBridge = await deployedToken.balanceOf(user);
             const totalSupplyBeforeBridge = await deployedToken.totalSupply();
+            const estimateValues = await deployedToken.estimateBridgeFee(allowedChainIds[0], 0n, 0n, "0x");
+            const gasLimit = estimateValues[1];
 
             await deployedToken.connect(user).bridge(
                 user.address,
                 user.address,
                 amountToBridge,
                 allowedChainIds[0],
-                configMinGasLimit,
+                gasLimit,
                 "0x",
                 "0x",
-                { value: baseFeePerGasInWei * configMinGasLimit }
+                { value: baseFeePerGasInWei * gasLimit }
             );
 
             expect(userBalanceBeforeBridge - amountToBridge).to.equal(await deployedToken.balanceOf(user));
@@ -3148,6 +3162,9 @@ describe("UTS Token", function () {
             const totalSupplyBefore = await deployedToken.totalSupply();
             const amountToBridge = withDecimals("1000.000000000009");
 
+            const estimateValues = await deployedToken.estimateBridgeFee(allowedChainIds[0], 0n, 0n, "0x");
+            const gasLimit = estimateValues[1];
+
             const userBalanceBeforeBridge = await deployedToken.balanceOf(user);
             const totalSupplyBeforeBridge = await deployedToken.totalSupply();
 
@@ -3156,10 +3173,10 @@ describe("UTS Token", function () {
                 user.address,
                 amountToBridge,
                 allowedChainIds[0],
-                configMinGasLimit,
+                gasLimit,
                 "0x",
                 "0x",
-                { value: baseFeePerGasInWei * configMinGasLimit }
+                { value: baseFeePerGasInWei * gasLimit }
             );
 
             expect(userBalanceBeforeBridge - amountToBridge).to.equal(await deployedToken.balanceOf(user));
@@ -3249,6 +3266,9 @@ describe("UTS Token", function () {
             const convertedAmountToBridge = await convert(amountToBridge, decimals, configDecimals);
             const amountToReceive = await convert(convertedAmountToBridge, configDecimals, decimals);
 
+            const estimateValues = await deployedToken.estimateBridgeFee(allowedChainIds[0], 0n, 0n, "0x");
+            const gasLimit = estimateValues[1];
+
             expect(amountToReceive).to.equal(withDecimals("1000"));
 
             const userBalanceBeforeBridge = await deployedToken.balanceOf(user);
@@ -3259,10 +3279,10 @@ describe("UTS Token", function () {
                 user.address,
                 amountToBridge,
                 allowedChainIds[0],
-                configMinGasLimit,
+                gasLimit,
                 "0x",
                 "0x",
-                { value: baseFeePerGasInWei * configMinGasLimit }
+                { value: baseFeePerGasInWei * gasLimit }
             );
 
             expect(userBalanceBeforeBridge - amountToReceive).to.equal(await deployedToken.balanceOf(user));
@@ -3592,14 +3612,17 @@ describe("UTS Token Pure", function () {
 
         const amountToBridge = withDecimals("100");
 
-        const bridgePayment = await router.getBridgeFee(testDstChainId, configMinGasLimit, 0n, "0x");
+        const estimateValues = await deployedToken.estimateBridgeFee(allowedChainIds[0], 0n, 0n, "0x");
+        const gasLimit = estimateValues[1];
+
+        const bridgePayment = await router.getBridgeFee(testDstChainId, gasLimit, 0n, "0x");
 
         await expect(() => deployedToken.connect(user).bridge(
             user.address,
             user.address,
             amountToBridge,
             testDstChainId,
-            configMinGasLimit,
+            gasLimit,
             "0x",
             "0x",
             { value: bridgePayment }
@@ -4222,14 +4245,18 @@ describe("UTS FeeModule", function () {
         const feeAmount = amountToBridge * feeRate / 10000n;
 
         const totalSupplyBefore = await deployedToken.totalSupply();
-        const bridgePayment = await router.getBridgeFee(allowedChainIds[0], configMinGasLimit, 0n, "0x");
+
+        const estimateValues = await deployedToken.estimateBridgeFee(allowedChainIds[0], 0n, 0n, "0x");
+        const gasLimit = estimateValues[1];
+
+        const bridgePayment = await router.getBridgeFee(allowedChainIds[0], gasLimit, 0n, "0x");
 
         await expect(() => deployedToken.connect(user).bridge(
             user,
             user.address,
             amountToBridge,
             allowedChainIds[0],
-            configMinGasLimit,
+            gasLimit,
             "0x",
             "0x",
             { value: bridgePayment }
@@ -4300,7 +4327,9 @@ describe("UTS FeeModule", function () {
         const feeAmount = amountToBridge * feeRate / 10000n;
 
         const totalSupplyBefore = await deployedToken.totalSupply();
-        const bridgePayment = await router.getBridgeFee(allowedChainIds[0], configMinGasLimit, 0n, "0x");
+        const estimateValues = await deployedToken.estimateBridgeFee(allowedChainIds[0], 0n, 0n, "0x");
+        const gasLimit = estimateValues[1];
+        const bridgePayment = await router.getBridgeFee(allowedChainIds[0], gasLimit, 0n, "0x");
 
         await deployedToken.connect(user).transfer(admin, amountToBridge);
         await deployedToken.connect(admin).approve(user, amountToBridge);
@@ -4310,7 +4339,7 @@ describe("UTS FeeModule", function () {
             user.address,
             amountToBridge,
             allowedChainIds[0],
-            configMinGasLimit,
+            gasLimit,
             "0x",
             "0x",
             { value: bridgePayment }
@@ -4381,14 +4410,16 @@ describe("UTS FeeModule", function () {
         const feeAmount = amountToBridge * feeRate / 10000n;
 
         const totalSupplyBefore = await deployedToken.totalSupply();
-        const bridgePayment = await router.getBridgeFee(allowedChainIds[0], configMinGasLimit, 0n, "0x");
+        const estimateValues = await deployedToken.estimateBridgeFee(allowedChainIds[0], 0n, 0n, "0x");
+        const gasLimit = estimateValues[1];
+        const bridgePayment = await router.getBridgeFee(allowedChainIds[0], gasLimit, 0n, "0x");
 
         await expect(() => deployedToken.connect(user).bridgeWithSlippageCheck(
             user,
             user.address,
             amountToBridge,
             allowedChainIds[0],
-            configMinGasLimit,
+            gasLimit,
             feeRate,
             "0x",
             "0x",
@@ -4444,7 +4475,9 @@ describe("UTS FeeModule", function () {
         const userBalanceBefore = await justToken.balanceOf(user);
         const executorBalanceBefore = await justToken.balanceOf(executor);
         const connectorBalanceBefore = await justToken.balanceOf(deployedConnector.target);
-        const bridgePayment = await router.getBridgeFee(allowedChainIds[0], configMinGasLimit, 0n, "0x");
+        const estimateValues = await deployedConnector.estimateBridgeFee(allowedChainIds[0], 0n, 0n, "0x");
+        const gasLimit = estimateValues[1];
+        const bridgePayment = await router.getBridgeFee(allowedChainIds[0], gasLimit, 0n, "0x");
 
         await justToken.connect(user).approve(deployedConnector.target, amountToBridge);
 
@@ -4453,7 +4486,7 @@ describe("UTS FeeModule", function () {
             user.address,
             amountToBridge,
             allowedChainIds[0],
-            configMinGasLimit,
+            gasLimit,
             "0x",
             "0x",
             { value: bridgePayment }
@@ -4519,7 +4552,9 @@ describe("UTS FeeModule", function () {
         const userBalanceBefore = await justToken.balanceOf(user);
         const executorBalanceBefore = await justToken.balanceOf(executor);
         const connectorBalanceBefore = await justToken.balanceOf(deployedConnector.target);
-        const bridgePayment = await router.getBridgeFee(allowedChainIds[0], configMinGasLimit, 0n, "0x");
+        const estimateValues = await deployedConnector.estimateBridgeFee(allowedChainIds[0], 0n, 0n, "0x");
+        const gasLimit = estimateValues[1];
+        const bridgePayment = await router.getBridgeFee(allowedChainIds[0], gasLimit, 0n, "0x");
 
         await justToken.connect(user).approve(deployedConnector.target, amountToBridge);
 
@@ -4528,7 +4563,7 @@ describe("UTS FeeModule", function () {
             user.address,
             amountToBridge,
             allowedChainIds[0],
-            configMinGasLimit,
+            gasLimit,
             feeRate,
             "0x",
             "0x",

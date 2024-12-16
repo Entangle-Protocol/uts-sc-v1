@@ -11,10 +11,21 @@ module.exports = buildModule("UTSDeploymentRouterProxyModule", (m) => {
     const paymentTokenDecimals = m.getParameter("paymentTokenDecimals");
     const nativeTokenDecimals = m.getParameter("nativeTokenDecimals");
     const paymentTransferGasLimit = m.getParameter("paymentTransferGasLimit");
+    const availableChainsNumber = m.getParameter("availableChainsNumber");
 
     const dRouterImplementation = m.contract(
         "UTSDeploymentRouter", 
-        [masterRouterAddress, priceFeedAddress, factoryAddress, registryAddress, paymentTokenAddress, paymentTokenDecimals, nativeTokenDecimals, paymentTransferGasLimit]
+        [
+            masterRouterAddress, 
+            priceFeedAddress, 
+            factoryAddress, 
+            registryAddress, 
+            paymentTokenAddress, 
+            paymentTokenDecimals, 
+            nativeTokenDecimals, 
+            paymentTransferGasLimit, 
+            availableChainsNumber
+        ]
     );
 
     const dRouterProxy = m.contract('ERC1967Proxy', [dRouterImplementation, initializeCalldata]);

@@ -34,6 +34,7 @@ async function ERC20Fixture() {
                 masterRouterAddress: masterRouter.target,
                 priceFeedAddress: priceFeed.target,
                 storeGasLimit: 45000,
+                serviceGas: 125000,
                 updateGasLimit: 30000,
                 paymentTransferGasLimit: 3000,
             },
@@ -52,6 +53,7 @@ async function ERC20Fixture() {
                 paymentTokenDecimals: 18,
                 nativeTokenDecimals: 18,
                 paymentTransferGasLimit: 3000,
+                availableChainsNumber: 12
             },
         },
     });
@@ -79,7 +81,7 @@ async function ERC20Fixture() {
     const pauserRole = await factory.PAUSER_ROLE();
     const managerRole = await router.MANAGER_ROLE();
 
-    const minGasLimit = 100000n;
+    const minGasLimit = 200000n;
     const deployTokenGas = 3300000n;
     const deployConnectorGas = 2500000n;
 

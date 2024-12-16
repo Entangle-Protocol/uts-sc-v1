@@ -6,15 +6,15 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "@openzeppelin/contracts/utils/Create2.sol";
 
-import "contracts/libraries/UTSERC20DataTypes.sol";
-import "contracts/libraries/AddressConverter.sol";
+import "../libraries/UTSERC20DataTypes.sol";
+import "../libraries/AddressConverter.sol";
 
 import "./interfaces/IUTSToken.sol";
 import "./interfaces/IUTSFactory.sol";
 import "./interfaces/IUTSConnector.sol";
 import "./interfaces/IUTSCodeStorage.sol";
-import "contracts/interfaces/IUTSRegistry.sol";
-import "contracts/interfaces/IUTSMasterRouter.sol";
+import "../interfaces/IUTSRegistry.sol";
+import "../interfaces/IUTSMasterRouter.sol";
 
 /**
  * @notice A contract allows to deploy UTSToken and UTSConnector contracts with various settings.

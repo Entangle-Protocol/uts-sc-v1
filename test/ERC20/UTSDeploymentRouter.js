@@ -655,6 +655,63 @@ describe("UTS DeploymentRouter", function () {
             ], dRouter.target)).to.be.revertedWithCustomError(dRouter, "UTSDeploymentRouter__E6");
         });
 
+        it("UTS DeploymentRouter E7", async function () {
+            const { justToken, executor, factory, user, router, dRouter } = await loadFixture(ERC20Fixture);
+
+            const name = "check0";
+            const symbol = "check1";
+            const decimals = 12n;
+            const initialSupply = withDecimals("1");
+            const configPeer = "0xf4050b2c873c7c8d2859c07d9f9d7166619873f7376bb93b4fc3c3efb93eec00ff";
+            const salt = "0x04050b2c873c7c8d2859c07d9f9d7166619873f7376bb93b4fc3c3efb93eec00";
+
+            const config = [configPeer, 150000n, 18, true];
+
+            const chainIds = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13];
+            const configs = [config, config, config, config, config, config, config, config, config, config, config, config, config]
+
+            const [tokenDeployParams, ,] = await encodeParamsToDeployToken(
+                dRouter,
+                factory,
+                executor,
+                user,
+                name,
+                symbol,
+                decimals,
+                initialSupply,
+                initialSupply,
+                false,
+                true,
+                true,
+                true,
+                router,
+                chainIds,
+                configs,
+                salt
+            );
+
+            const [connectorDeployParams, ,] = await encodeParamsToDeployConnector(
+                dRouter,
+                factory,
+                user,
+                user,
+                justToken,
+                true,
+                router,
+                chainIds,
+                configs,
+                "0x04050b2c873c7c8d2859c07d9f9d7166619873f7376bb93b4fc3c3efb93eec00"
+            );
+
+            await expect(dRouter.connect(user).sendDeployRequest([
+                [137, false, tokenDeployParams]
+            ], dRouter.target)).to.be.revertedWithCustomError(dRouter, "UTSDeploymentRouter__E7");
+
+            await expect(dRouter.connect(user).sendDeployRequest([
+                [137, true, connectorDeployParams]
+            ], dRouter.target)).to.be.revertedWithCustomError(dRouter, "UTSDeploymentRouter__E7");
+        });
+
         it("Should revert by wrong encoded params", async function () {
             const { router, user, dRouter } = await loadFixture(ERC20Fixture);
 

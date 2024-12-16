@@ -3,10 +3,10 @@ pragma solidity 0.8.24;
  
 import "@openzeppelin/contracts/utils/introspection/ERC165.sol";
 
-import "contracts/libraries/BytesLib.sol";
-import "contracts/libraries/AddressConverter.sol";
-import "contracts/libraries/DecimalsConverter.sol"; 
-import "contracts/libraries/UTSERC20DataTypes.sol";
+import "../libraries/BytesLib.sol";
+import "../libraries/AddressConverter.sol";
+import "../libraries/DecimalsConverter.sol"; 
+import "../libraries/UTSERC20DataTypes.sol";
 
 import "./interfaces/IUTSBase.sol";
 import "./interfaces/IUTSRouter.sol";
@@ -590,7 +590,7 @@ abstract contract UTSBase is IUTSBase, ERC165 {
         uint256 amount,
         bytes memory customPayload,
         Origin memory origin
-    ) internal virtual returns(uint256);
+    ) internal virtual returns(uint256 receivedAmount);
 
     /**
      * @dev The function MUST be overridden to implement {burn}/{transferFrom} underlying tokens from {spender}/{from} 
@@ -601,6 +601,9 @@ abstract contract UTSBase is IUTSBase, ERC165 {
      *
      * IMPORTANT: If this contract IS NOT a token itself, the {spender} and {from} addresses MUST be the same to prevent tokens
      * stealing via third-party allowances.
+     *
+     * IMPORTANT: Returned {bridgedAmount} value will be actually used for crosschain message, as it may be different from {amount}, 
+     * if custom logic inside {_burnFrom} function modifies it.
      */
     function _burnFrom(
         address spender,
@@ -609,5 +612,5 @@ abstract contract UTSBase is IUTSBase, ERC165 {
         uint256 amount, 
         uint256 dstChainId, 
         bytes memory customPayload
-    ) internal virtual returns(uint256);
+    ) internal virtual returns(uint256 bridgedAmount);
 }
