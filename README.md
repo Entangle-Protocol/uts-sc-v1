@@ -12,7 +12,7 @@
   </p>
 
   <p>
-    <a href=""><img alt="Tutorials" src="https://img.shields.io/badge/docs-tutorials-green" /></a>
+    <a href="https://docs.entangle.fi/universal-token-standard/overview"><img alt="Tutorials" src="https://img.shields.io/badge/docs-tutorials-green" /></a>
   </p>
 </div>
 
@@ -49,11 +49,11 @@ node 22.7.0
 
 With UTS, developers gain the ability to create powerful omnichain clusters that effortlessly interact across a diverse range of blockchains.
 
-To design a custom omnichain token, you can explore our [documentation]() for detailed guidance or use our intuitive [web interface]() to complete the process in just a few clicks.
+To design a custom omnichain token, you can explore our [documentation](https://docs.entangle.fi/universal-token-standard/getting-started) for detailed guidance or use our intuitive [web interface](https://uts.entangle.fi/) to complete the process in just a few clicks.
 
-If you're starting from scratch, our [Quickstart section]() is your go-to resource, enabling you to launch your token in under 30 minutes.
+If you're starting from scratch, our [Quickstart section](https://docs.entangle.fi/universal-token-standard/getting-started) is your go-to resource, enabling you to launch your token in under 30 minutes.
 
-Additionally, we offer a collection of ready-made showcases tailored to various use cases. If one aligns with your requirements, you can leverage it directly. Full details can be found in the [Showcase section]() of the documentation.
+Additionally, we offer a collection of ready-made showcases tailored to various use cases. If one aligns with your requirements, you can leverage it directly. Full details can be found in the [Showcase section](https://docs.entangle.fi/universal-token-standard/examples) of the documentation.
 
 ## Changelog
 
@@ -73,4 +73,4 @@ Additionally, we offer a collection of ready-made showcases tailored to various 
 
 ## Security
 
-[License](SECURITY.md)
+[Security](SECURITY.md)

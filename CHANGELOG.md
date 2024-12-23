@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 23-12-2024
+
 ### Added
 
 - UTS Base mechanic
@@ -21,14 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Deployed on Polygon
 - Deployed on Mantle
 - Prepared architecture for "pull" like prices
-- Showcases: UTSConnector mint/burn, UTSConnector lock/unlock, UTSToken
+- Showcases: UTSConnector(over native currency, mint/burn, lock/unlock), UTSToken(mint/burn, with custom logic)
 - Crosschain deploy
 - Registry added
 - FeeToken option added
-
-### Security
-- internal audit
-- external audit by
-
-
-## [1.0.0] - dd-mm-yyyy
